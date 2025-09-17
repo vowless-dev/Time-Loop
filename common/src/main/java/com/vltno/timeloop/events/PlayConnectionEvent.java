@@ -2,8 +2,11 @@ package com.vltno.timeloop.events;
 
 import com.vltno.timeloop.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
@@ -32,11 +35,29 @@ public class PlayConnectionEvent {
             TimeLoop.config.firstStart = false;
             TimeLoop.config.save();
 
-            TimeLoop.LOOP_LOGGER.info("First start detected, sending message to ops.");
+            TimeLoop.LOOP_LOGGER.info("First start detected, sending message to op(s).");
+
+            Component modrinthLink = Component.literal("https://modrinth.com/mod/timeloop")
+                    .withStyle(Style.EMPTY
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://modrinth.com/mod/timeloop"))
+                            .withColor(ChatFormatting.BLUE)
+                            .withUnderlined(true)
+                    );
+
+            Component discordLink = Component.literal("https://discord.gg/nzDETZhqur")
+                    .withStyle(Style.EMPTY
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/nzDETZhqur"))
+                            .withColor(ChatFormatting.BLUE)
+                            .withUnderlined(true)
+                    );
 
             // Check if player is OP and send message directly
             if (server.getPlayerList().isOp(player.getGameProfile())) {
                 player.sendSystemMessage(Component.literal("Use '/loop start' to start the time loop!"));
+                player.sendSystemMessage(Component.literal("Settings: '/loop settings'"));
+                player.sendSystemMessage(Component.literal("Toggles: '/loop settings toggles'"));
+                player.sendSystemMessage(Component.literal("Information: ").append(modrinthLink));
+                player.sendSystemMessage(Component.literal("Help: ").append(discordLink));
             }
         }
 

@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -139,6 +140,14 @@ public class TimeLoop {
 					}
 					player.teleportTo(joinPosition.x, joinPosition.y, joinPosition.z);
 				}
+                case SPAWN_POSITION -> {
+                    BlockPos spawnPosition = server.overworld().getSharedSpawnPos();
+                    if (spawnPosition == null) {
+                        LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
+                        return;
+                    }
+                    player.teleportTo(spawnPosition.getX(), spawnPosition.getY(), spawnPosition.getZ());
+                }
 			}
 			
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
