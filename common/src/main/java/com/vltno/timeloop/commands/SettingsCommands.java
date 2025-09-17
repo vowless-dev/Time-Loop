@@ -12,6 +12,9 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.StringRepresentable;
+
+import java.util.Arrays;
 
 public class SettingsCommands {
 
@@ -25,7 +28,7 @@ public class SettingsCommands {
                     return 1;
                 })
                 .then(Commands.argument("loopType", StringArgumentType.word())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(new String[]{"TICKS", "TIME_OF_DAY", "SLEEP", "DEATH", "MANUAL"}, builder))
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(LoopTypes.values()).map(LoopTypes::getSerializedName), builder))
                         .executes(SettingsCommands::setLoopType)));
 
         settingsNode.then(Commands.literal("setLength")
@@ -64,7 +67,7 @@ public class SettingsCommands {
                     return 1;
                 })
                 .then(Commands.argument("rewindType", StringArgumentType.word())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(new String[]{"NONE", "START_POSITION", "JOIN_POSITION"}, builder))
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(RewindTypes.values()).map(RewindTypes::getSerializedName), builder))
                         .executes(SettingsCommands::setRewindType)));
         
         TogglesCommands.register(settingsNode);

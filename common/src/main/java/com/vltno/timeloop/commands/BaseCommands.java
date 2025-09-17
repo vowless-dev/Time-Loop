@@ -25,10 +25,6 @@ public class BaseCommands {
         parentBuilder.then(Commands.literal("skip")
                 .executes(BaseCommands::skip)
                 .requires(source -> source.hasPermission(2)));
-
-        parentBuilder.then(Commands.literal("skip")
-                .executes(BaseCommands::skip)
-                .requires(source -> source.hasPermission(2)));
         
         parentBuilder.then(Commands.literal("stop")
                 .executes(BaseCommands::stop)

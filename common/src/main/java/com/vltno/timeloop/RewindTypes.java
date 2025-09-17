@@ -6,7 +6,8 @@ import org.jetbrains.annotations.NotNull;
 public enum RewindTypes implements StringRepresentable {
     NONE,
     START_POSITION,
-    JOIN_POSITION;
+    JOIN_POSITION,
+    SPAWN_POSITION;
 
     @Override
     public @NotNull String getSerializedName() {

@@ -20,14 +20,14 @@ public class TimeLoopConfig {
     public int maxLoops = 0; // No limit by default
     public long timeSetting = 13000;
     public long startTimeOfDay = 0;
-    public boolean trackTimeOfDay = true;
+    public boolean trackTimeOfDay = false;
     public int ticksLeft;
 
     public boolean showLoopInfo = true;
     public boolean displayTimeInTicks = false;
-    public boolean trackItems = false;
+    public boolean trackItems = true;
     public LoopTypes loopType = LoopTypes.TICKS;
-    public boolean trackChat = false;
+    public boolean trackChat = true;
     public boolean hurtLoopedPlayers = false;
     public RewindTypes rewindType = RewindTypes.NONE;
     public boolean trackInventory = false;
