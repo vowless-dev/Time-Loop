@@ -53,7 +53,11 @@ public class PlayConnectionEvent {
 
             // Check if player is OP and send message directly
             if (server.getPlayerList().isOp(player.getGameProfile())) {
-
+                player.sendSystemMessage(Component.literal("Use '/loop start' to start the time loop!"));
+                player.sendSystemMessage(Component.literal("Settings: '/loop settings'"));
+                player.sendSystemMessage(Component.literal("Toggles: '/loop settings toggles'"));
+                player.sendSystemMessage(Component.literal("Information: ").append(modrinthLink));
+                player.sendSystemMessage(Component.literal("Help: ").append(discordLink));
             }
         }
 
