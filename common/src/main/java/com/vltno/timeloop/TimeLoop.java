@@ -102,6 +102,9 @@ public class TimeLoop {
 	 * Runs the next iteration of the loop.
 	 */
 	public static void runLoopIteration() {
+        if (loopIteration + 1 >= maxLoops) {
+            stopLoop();
+        }
 		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
 		saveRecordings();
 		removeOldSceneEntries();
