@@ -67,4 +67,4 @@ https://github.com/mt1006/mc-mocap-mod/issues/56
 https://github.com/mt1006/mc-mocap-mod/issues/57
 
 # Support
-If you need help or encounter an issue, don't hesitate to ask someone in the discord: https://discord.gg/nzDETZhqur
+If you need help or encounter an issue, don't hesitate to ask someone in the discord: https://discord.gg/B4wMdgY58H
