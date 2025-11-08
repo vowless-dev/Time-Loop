@@ -3,7 +3,7 @@
 [![Static Badge](https://img.shields.io/badge/Modrinth-Release-green?logo=Modrinth)](https://modrinth.com/mod/timeloop/version/latest)
 \
 A mod that 'loops' time by using the Motion Capture Mod.
-*Motion Capture mod by mt1006. Inspired by [this Tombino video](https://www.youtube.com/watch?v=i602-oh0a0c). Original datapack by Penguin Mafia. Fabric version by Luigi & VLTNO.*
+*Motion Capture mod by mt1006. Inspired by [this Tombino video](https://www.youtube.com/watch?v=i602-oh0a0c). Original datapack by Penguin Mafia.*
 
 # Installation
 **Requires Motion Capture 1.4 Alpha 8**
