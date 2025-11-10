@@ -4,16 +4,21 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,11 +65,7 @@ public class TimeLoop {
 	// Get the world folder path for config/recording loading
 	public static Path worldFolder;
 
-	public static boolean isDedicatedServer;
-
-	public static void init(boolean isDedicatedServer) {
-		TimeLoop.isDedicatedServer = isDedicatedServer;
-
+	public static void init() {
 		loopBossBar = new LoopBossBar();
 
 		LOOP_LOGGER.info("Initializing TimeLoop mod (Common)");
@@ -102,8 +103,13 @@ public class TimeLoop {
 	 * Runs the next iteration of the loop.
 	 */
 	public static void runLoopIteration() {
-        if (loopIteration + 1 >= maxLoops) {
+        if (!isLooping) {
+            LOOP_LOGGER.warn("Tried to iterate but not looping!");
+            return;
+        }
+        if (loopIteration + 1 >= maxLoops && maxLoops != 0) {
             stopLoop();
+            return;
         }
 		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
 		saveRecordings();
@@ -152,7 +158,6 @@ public class TimeLoop {
                     player.teleportTo(spawnPosition.getX(), spawnPosition.getY(), spawnPosition.getZ());
                 }
 			}
-			
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 			TimeLoop.executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
 		});
@@ -186,7 +191,8 @@ public class TimeLoop {
 
 			playerData.setStartPosition(server.getPlayerList().getPlayerByName(playerName).position());
 		});
-		
+
+        startTimeOfDay = serverLevel.getDayTime();
 		isLooping = true;
 		config.isLooping = true;
 		tickCounter = 0;
@@ -220,9 +226,7 @@ public class TimeLoop {
 			LOOP_LOGGER.info("Processing recording for player: {}", playerName);
 			executeCommand(String.format("mocap recording stop -+mc.%s.1", playerName));
 			executeCommand(String.format("mocap recording save %s -+mc.%s.1", recordingName.toLowerCase(), playerName));
-			if (recordingFileExists(recordingName)) {
-				executeCommand(String.format("mocap scenes add_to %s %s", playerSceneName, recordingName.toLowerCase()));
-			}
+            executeCommand(String.format("mocap scenes add_to %s %s", playerSceneName, recordingName.toLowerCase()));
 		});
 	}
 
@@ -242,25 +246,6 @@ public class TimeLoop {
 			ticksLeft = loopLengthTicks;
 			LOOP_LOGGER.info("Loop stopped!");
 		}
-	}
-
-	/**
-	 * Checks if a recording file with the specified name exists in the predefined recordings directory.
-	 * The method returns a boolean indicating the existence of the file.
-	 *
-	 * @param recordingName The name of the recording file to check, without the file extension.
-	 * @return true if the recording file exists, false otherwise.
-	 */
-	private static boolean recordingFileExists(String recordingName) {
-		// Build the complete path for the recording directory using the absolute world path
-		Path recordingDir = worldFolder.resolve("mocap_files").resolve("recordings");
-		Path recordingFile = recordingDir.resolve(recordingName.toLowerCase() + ".mcmocap_rec");
-
-		boolean exists = recordingFile.toFile().exists();
-		if (!exists) {
-			LOOP_LOGGER.error("Expected recording file does not exist: {}", recordingFile.toAbsolutePath());
-		}
-		return exists;
 	}
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, String newSkin) {
