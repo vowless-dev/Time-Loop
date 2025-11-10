@@ -25,13 +25,11 @@ import org.slf4j.LoggerFactory;
 public class TimeLoopNeoForge {
 
     public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
-    
-    public static final boolean isLogicalServer = !FMLEnvironment.dist.isClient();
 
     public TimeLoopNeoForge(IEventBus modEventBus) {
         LOOP_LOGGER.info("Initializing TimeLoop mod (NeoForge)");
         
-        TimeLoop.init(isLogicalServer);
+        TimeLoop.init();
 
         // Register gameplay event listeners to the NeoForge EVENT bus
         NeoForge.EVENT_BUS.register(this);
@@ -52,9 +50,9 @@ public class TimeLoopNeoForge {
         TickNeoForgeEvent.onEndServerTick(event.getServer());
     }
 
-    // Player Wake Up handler (approximation for Stop Sleeping)
     @SubscribeEvent
     public void onPlayerWakeUp(PlayerWakeUpEvent event) {
+        if (event.getEntity().level().isClientSide()) { return; }
         EntitySleepNeoForgeEvent.onStopSleeping(event.getEntity());
     }
 

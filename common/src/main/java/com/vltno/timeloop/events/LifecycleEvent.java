@@ -67,7 +67,7 @@ public class LifecycleEvent {
             TimeLoop.stopLoop();
             TimeLoop.config.isLooping = true;
             
-            if(TimeLoop.worldFolder != null) {
+            if (TimeLoop.worldFolder != null) {
                 TimeLoop.config.save();
             }
         } else {

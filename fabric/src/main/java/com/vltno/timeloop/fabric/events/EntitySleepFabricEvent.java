@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 
 public class EntitySleepFabricEvent {
     public static void onStopSleeping(LivingEntity entity, BlockPos sleepingPos) {
+        if (entity.level().isClientSide()) { return; }
         EntitySleepEvent.onStopSleeping(entity);
     }
 }
