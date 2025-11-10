@@ -2,7 +2,6 @@ package com.vltno.timeloop.fabric;
 
 import com.vltno.timeloop.*;
 import com.vltno.timeloop.fabric.events.*;
-import net.fabricmc.api.EnvType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.EntitySleepEvents;
@@ -10,20 +9,18 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 public class TimeLoopFabric implements ModInitializer {
     public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
-    public static final boolean isDedicatedServer = FabricLoader.getInstance().getEnvironmentType() == EnvType.SERVER;
     
     @Override
     public void onInitialize() {
         LOOP_LOGGER.info("Initializing TimeLoop mod (Fabric)");
 
-        TimeLoop.init(isDedicatedServer);
+        TimeLoop.init();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Only register commands on the logical server
@@ -32,7 +29,10 @@ public class TimeLoopFabric implements ModInitializer {
             }
         });
 
-        EntitySleepEvents.STOP_SLEEPING.register(EntitySleepFabricEvent::onStopSleeping);
+        EntitySleepEvents.STOP_SLEEPING.register((entity, blockPos) -> {
+            if (entity.level().isClientSide()) { return; }
+            EntitySleepFabricEvent.onStopSleeping(entity, blockPos);
+        });
 
         ServerLifecycleEvents.SERVER_STARTED.register(LifecycleFabricEvent::onServerStart);
 
