@@ -16,6 +16,10 @@ A mod that 'loops' time by using the Motion Capture Mod.
 
 [Mocap 1.4 Alpha 8 - 1.21.4 - NeoForge](https://modrinth.com/mod/motion-capture/version/1.4-alpha-8-neoforge-1.21.4)
 
+[Mocap 1.4 Alpha 8 - 1.21.10 - Fabric](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-fabric-1.21.10)
+
+[Mocap 1.4 Alpha 8 - 1.21.10 - NeoForge](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-neoforge-1.21.10)
+
 The mod works in singleplayer and multiplayer.
 
 # Usage
@@ -36,11 +40,11 @@ Simply use commands to configure the loop.
     - `setRewindType [NONE]` - Sets the rewind type.
     - **toggles**
         - `trackTimeOfDay [true]` - Toggles tracking the time of day during loops.
-        - `trackItems [false]` - Toggles tracking items during loops.
+        - `trackItems [true]` - Toggles tracking dropped items during loops.
         - `trackInventory [false]` - Toggles tracking the player's inventory during loops.
         - `showLoopInfo [true]` - Toggles a bar at the top of the screen showing the amount of ticks/time left until the next loop.
         - `displayTimeInTicks [false]` - Displays the ticks instead of HH:MM:SS on the info bar.
-        - `trackChat [false]` - Toggles tracking chat during loops.
+        - `trackChat [true]` - Toggles tracking chat during loops.
         - `hurtLoopedPlayers [false]` - Toggles being able to hit looped players.
 
 # Loop Types
