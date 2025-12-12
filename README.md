@@ -6,7 +6,7 @@ A mod that 'loops' time by using the Motion Capture Mod.
 *Motion Capture mod by mt1006. Inspired by [this Tombino video](https://www.youtube.com/watch?v=i602-oh0a0c). Original datapack by Penguin Mafia.*
 
 # Installation
-**Requires Motion Capture 1.4 Alpha 8**
+**Requires Motion Capture Mod**
 
 [Mocap 1.4 Alpha 8 - 1.21.1 - Fabric](https://modrinth.com/mod/motion-capture/version/1.4-alpha-8-fabric-1.21.1)
 
@@ -16,9 +16,9 @@ A mod that 'loops' time by using the Motion Capture Mod.
 
 [Mocap 1.4 Alpha 8 - 1.21.4 - NeoForge](https://modrinth.com/mod/motion-capture/version/1.4-alpha-8-neoforge-1.21.4)
 
-[Mocap 1.4 Alpha 8 - 1.21.10 - Fabric](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-fabric-1.21.10)
+[Mocap 1.4 Alpha 9 - 1.21.10 - Fabric](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-fabric-1.21.10)
 
-[Mocap 1.4 Alpha 8 - 1.21.10 - NeoForge](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-neoforge-1.21.10)
+[Mocap 1.4 Alpha 9 - 1.21.10 - NeoForge](https://modrinth.com/mod/motion-capture/version/1.4-alpha-9-neoforge-1.21.10)
 
 The mod works in singleplayer and multiplayer.
 
