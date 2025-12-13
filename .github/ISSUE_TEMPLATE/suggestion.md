@@ -8,9 +8,8 @@ assignees: ''
 ---
 
 **Before posting a suggestion, think about the following:**
- - Is it in the scope of the mod? *(no requests for stuff that doesn't make sense)*
- - Is it useful? *(will the average user use your feature, or is it just for you? **Note: I will try and develop specific suggestions but more broad ones will be prioritized**)*
- - Is it cool? *(if so, congratulations! Just **fill in the information under the following headings**.)*
+ - Is it in the scope of the mod?
+ - Is it useful? *(will it benefit the average user?)*
 
 ### **Describe the solution you'd like**
 A description of what you want to happen.
