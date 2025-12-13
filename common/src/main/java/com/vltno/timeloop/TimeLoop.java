@@ -17,7 +17,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -110,7 +110,7 @@ public class TimeLoop {
         TimeLoop.LOOP_LOGGER.info("Player {} changed dimension to {}.",
                 player.getName().getString(), player.level().dimension().location().toString());
 
-        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().getName());
+        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
 
         if (playerData == null) {
             LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
@@ -180,10 +180,9 @@ public class TimeLoop {
 
             if (!rewindType.equals(RewindTypes.NONE)) {
                 ServerLevel targetLevel = (ServerLevel) player.level();
-                Set<Relative> absoluteMovement = Collections.emptySet();
+                Set<RelativeMovement> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
-                boolean setCamera = false;
 
                 double x = 0.0, y = 0.0, z = 0.0;
                 switch (rewindType) {
@@ -219,7 +218,7 @@ public class TimeLoop {
                         z = spawnPosition.getZ();
                     }
                 }
-                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch, setCamera);
+                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch);
             }
             playerData.setLastDimensionKey(player.level().dimension());
 
