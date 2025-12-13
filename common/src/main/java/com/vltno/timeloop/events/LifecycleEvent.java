@@ -22,6 +22,7 @@ public class LifecycleEvent {
         TimeLoop.startTimeOfDay = TimeLoop.config.startTimeOfDay;
         TimeLoop.timeSetting = TimeLoop.config.timeSetting;
         TimeLoop.trackTimeOfDay = TimeLoop.config.trackTimeOfDay;
+        TimeLoop.tickCounter = TimeLoop.config.tickCounter;
         TimeLoop.ticksLeft = TimeLoop.config.ticksLeft;
 
         TimeLoop.showLoopInfo = TimeLoop.config.showLoopInfo;
@@ -64,8 +65,10 @@ public class LifecycleEvent {
     public static void onServerStopping()
     {
         if (TimeLoop.isLooping) {
-            TimeLoop.stopLoop();
+            TimeLoop.stopLoop(true);
             TimeLoop.config.isLooping = true;
+            TimeLoop.config.tickCounter = TimeLoop.tickCounter;
+            TimeLoop.config.ticksLeft = TimeLoop.ticksLeft;
             
             if (TimeLoop.worldFolder != null) {
                 TimeLoop.config.save();

@@ -4,15 +4,12 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -21,7 +18,6 @@ import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +45,7 @@ public class TimeLoop {
 	public static boolean trackTimeOfDay;
 	public static boolean isLooping;
 	public static int maxLoops;
-	public static int tickCounter = 0; // Tracks elapsed ticks
+	public static int tickCounter; // Tracks elapsed ticks
 	public static int ticksLeft;
 
 	public static boolean showLoopInfo;
@@ -154,7 +150,7 @@ public class TimeLoop {
         LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
         saveRecordings();
         removeOldSceneEntries();
-        TimeLoop.executeCommand("mocap playback stop_all including_others");
+        executeCommand("mocap playback stop_all including_others");
         startRecordings();
         if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
@@ -223,7 +219,7 @@ public class TimeLoop {
             playerData.setLastDimensionKey(player.level().dimension());
 
             String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-            TimeLoop.executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
+            executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
         });
 
         loopIteration++;
@@ -321,20 +317,26 @@ public class TimeLoop {
 	/**
 	 * Stops the loop.
 	 */
-	public static void stopLoop() {
+	public static void stopLoop(boolean tempStop) {
 		if (isLooping) {
 			LOOP_LOGGER.info("Stopping loop");
 			isLooping = false;
-			config.isLooping = false;
+            if (!tempStop) {
+                config.isLooping = false;
+                tickCounter = 0;
+                ticksLeft = loopLengthTicks;
+            }
 			loopBossBar.visible(false);
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
 			executeCommand("mocap playback stop_all including_others");
-			tickCounter = 0;
-			ticksLeft = loopLengthTicks;
 			LOOP_LOGGER.info("Loop stopped!");
 		}
 	}
+
+    public static void stopLoop() {
+        stopLoop(false);
+    }
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, String newSkin) {
 		String playerSceneName = loopSceneManager.getPlayerSceneName(targetPlayerName);
