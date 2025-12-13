@@ -103,7 +103,7 @@ public class TimeLoop {
         if (!isLooping) return;
 
         // Log message for debugging dimension change
-        TimeLoop.LOOP_LOGGER.info("Player {} changed dimension to {}.",
+        LOOP_LOGGER.info("Player {} changed dimension to {}.",
                 player.getName().getString(), player.level().dimension().location().toString());
 
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
