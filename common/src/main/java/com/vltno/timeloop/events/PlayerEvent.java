@@ -10,13 +10,14 @@ import java.sql.Time;
 public class PlayerEvent {
     public static void afterRespawn() {
         if (TimeLoop.loopType == LoopTypes.DEATH) {
-            TimeLoop.LOOP_LOGGER.info("RESPAWNED!!!!");
+            TimeLoop.LOOP_LOGGER.info("RESPAWNED");
             TimeLoop.runLoopIteration();
         }
     }
 
     public static void dimensionChange(ServerPlayer player) {
-        TimeLoop.LOOP_LOGGER.info("CHANGED DIMENSION!!!! :D");
+        if (!TimeLoop.isLooping) return;
+        TimeLoop.LOOP_LOGGER.info("{} CHANGED DIMENSION", player.getGameProfile().name());
         TimeLoop.handlePlayerDimensionChange(player);
     }
 }

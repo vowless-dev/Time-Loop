@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.DynamicOps;
-import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -14,8 +13,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -26,9 +23,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
-import net.mt1006.mocap.mocap.recording.RecordingManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,34 +103,37 @@ public class TimeLoop {
 
     public static void handlePlayerDimensionChange(ServerPlayer player) {
         if (!isLooping) return;
+
+        // Log message for debugging dimension change
         TimeLoop.LOOP_LOGGER.info("Player {} changed dimension to {}.",
                 player.getName().getString(), player.level().dimension().location().toString());
 
-//        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().name());
-//
-//        if (playerData == null) {
-//            LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
-//            return;
-//        }
-//
-//        ResourceKey<Level> currentDimension = player.level().dimension();
-//        ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
-//
-//        // Check if dimension has changed since the last recorded state.
-//        if (currentDimension.equals(lastDimension) && lastDimension != null) {
-//            return;
-//        }
-//
-//        // --- Dimension Change Management ---
-//
-//        // Mocap has AUTOMATICALLY created a new active recording segment at the next index.
-//        playerData.incrementActiveRecordingIndex();
-//
-//        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
-//                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
-//
-//        // Update the state (Equivalent to updating the 'lastdimention' scoreboard)
-//        playerData.setLastDimensionKey(currentDimension);
+        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().name());
+
+        if (playerData == null) {
+            LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
+            return;
+        }
+
+        ResourceKey<Level> currentDimension = player.level().dimension();
+        ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
+
+        // Check if dimension has actually changed since the last update
+        if (currentDimension.equals(lastDimension) && lastDimension != null) {
+            return;
+        }
+
+        // --- Fix: Segmented Recording Tracking ---
+        // The mocap mod's SPLIT_RECORDING feature handles the command-level split.
+        // It sets the old recording to WAITING_FOR_DECISION and starts a new one with the next index (.2, .3, etc.).
+        // We must manually update our loop system's index to match mocap's internal index.
+        playerData.incrementActiveRecordingIndex();
+
+        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
+                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
+
+        // Update the player's state
+        playerData.setLastDimensionKey(currentDimension);
     }
 
 	/**
@@ -166,43 +164,60 @@ public class TimeLoop {
 			CompoundTag inventoryTag = playerData.getInventoryTag();
 			
 			Player player = server.getPlayerList().getPlayerByName(playerName);
+            if (player == null) {
+                LOOP_LOGGER.warn("Player {} is offline, skipping rewind.", playerName);
+                return;
+            }
+
 			HolderLookup.Provider provider = server.registryAccess();
 
 			if (trackInventory) {
 				loadFullInventory(player, inventoryTag, provider);
 			}
 
-            ServerLevel targetLevel = (ServerLevel) player.level();
-            Set<Relative> absoluteMovement = Collections.emptySet();
-            float yaw = player.getYRot();
-            float pitch = player.getXRot();
-            boolean setCamera = false;
+            if (!rewindType.equals(RewindTypes.NONE)) {
+                ServerLevel targetLevel = (ServerLevel) player.level();
+                Set<Relative> absoluteMovement = Collections.emptySet();
+                float yaw = player.getYRot();
+                float pitch = player.getXRot();
+                boolean setCamera = false;
 
-			switch (rewindType) {
-				case START_POSITION -> {
-					if (startPosition == null) {
-						LOOP_LOGGER.error("Player {} has no start position yet. Defaulting to join position.", playerName);
-						player.teleportTo(targetLevel, joinPosition.x, joinPosition.y, joinPosition.z, absoluteMovement, yaw, pitch, setCamera);
-						return;
-					}
-					player.teleportTo(targetLevel, startPosition.x, startPosition.y, startPosition.z, absoluteMovement, yaw, pitch, setCamera);
-				}
-				case JOIN_POSITION -> {
-					if (joinPosition == null) {
-						LOOP_LOGGER.error("Player {} has no join position yet. (somehow??)", playerName);
-						return;
-					}
-					player.teleportTo(targetLevel, joinPosition.x, joinPosition.y, joinPosition.z, absoluteMovement, yaw, pitch, setCamera);
-				}
-                case SPAWN_POSITION -> {
-                    BlockPos spawnPosition = server.overworld().getRespawnData().pos();
-                    if (spawnPosition == null) {
-                        LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
-                        return;
+                double x = 0.0, y = 0.0, z = 0.0;
+                switch (rewindType) {
+                    case START_POSITION -> {
+                        if (startPosition == null) {
+                            LOOP_LOGGER.error("Player {} has no start position yet. Defaulting to join position.", playerName);
+                            x = joinPosition.x;
+                            y = joinPosition.y;
+                            z = joinPosition.z;
+                        } else {
+                            x = startPosition.x;
+                            y = startPosition.y;
+                            z = startPosition.z;
+                        }
                     }
-                    player.teleportTo(targetLevel, spawnPosition.getX(), spawnPosition.getY(), spawnPosition.getZ(), absoluteMovement, yaw, pitch, setCamera);
+                    case JOIN_POSITION -> {
+                        if (joinPosition == null) {
+                            LOOP_LOGGER.error("Player {} has no join position yet. (somehow??)", playerName);
+                            return;
+                        }
+                        x = joinPosition.x;
+                        y = joinPosition.y;
+                        z = joinPosition.z;
+                    }
+                    case SPAWN_POSITION -> {
+                        BlockPos spawnPosition = server.overworld().getRespawnData().pos();
+                        if (spawnPosition == null) {
+                            LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
+                            return;
+                        }
+                        x = spawnPosition.getX();
+                        y = spawnPosition.getY();
+                        z = spawnPosition.getZ();
+                    }
                 }
-			}
+                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch, setCamera);
+            }
             playerData.setLastDimensionKey(player.level().dimension());
 
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
@@ -264,20 +279,39 @@ public class TimeLoop {
 	 * Saves the recordings.
 	 */
 	public static void saveRecordings() {
-		// Stop and save recordings for each player
+        // Stop and save recordings for each player
         loopSceneManager.forEachRecordingPlayer(playerData -> {
             String playerName = playerData.getName();
             String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-            // Iterate and save ALL active recordings (e.g., .1, .2, .3, etc.)
-            for (int i = 1; i <= playerData.getActiveRecordingIndex(); i++) {
-                String recordingToStop = String.format("-+mc.%s.%d", playerName, i);
+            int totalSegments = playerData.getActiveRecordingIndex();
+            int lastSegmentIndex = totalSegments;
+
+            // Iterate and save ALL active recording segments based on the index tracked in PlayerData.
+            for (int i = 1; i <= totalSegments; i++) {
+                String recordingToProcess = String.format("-+mc.%s.%d", playerName, i);
                 String recordingName = String.format("%s_loop%d_idx%d", playerName, loopIteration, i);
 
-                LOOP_LOGGER.info("Processing active recording {} for player: {}", i, playerName);
-                executeCommand(String.format("mocap recording stop %s", recordingToStop));
-                executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToStop));
-                executeCommand(String.format("mocap scenes add_to %s %s", playerSceneName, recordingName.toLowerCase()));
+                LOOP_LOGGER.info("Processing active recording segment {} for player: {}", i, playerName);
+
+                // If this is the currently recording segment, we must first STOP it.
+                // If it's an earlier segment, it's already in the 'waiting for decision' state
+                // (due to the dimension split), so a second 'stop' would DISCARD it.
+                if (i == lastSegmentIndex) {
+                    // Manually stop the currently active recording (e.g., -+mc.Dev.2 or -+mc.Dev.1 if no split)
+                    // This puts it into the 'waiting for decision' state.
+                    LOOP_LOGGER.info("Stopping final segment: {}", recordingToProcess);
+                    executeCommand(String.format("mocap recording stop %s", recordingToProcess));
+                } else {
+                    // If it's not the last segment, it's already in 'waiting for decision' from the split.
+                    LOOP_LOGGER.info("Segment {} assumed to be in 'waiting' state from dimension split.", i);
+                }
+
+                // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
+                executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
+
+                // Add the segment to the scene.
+                executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
             }
         });
 	}

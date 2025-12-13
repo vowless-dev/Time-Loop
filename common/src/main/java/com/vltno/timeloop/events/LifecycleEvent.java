@@ -48,6 +48,7 @@ public class LifecycleEvent {
         TimeLoop.executeCommand("mocap settings recording assign_player_name true");
         TimeLoop.executeCommand("mocap settings recording start_instantly true");
         TimeLoop.executeCommand("mocap settings recording on_death continue_synced");
+        TimeLoop.executeCommand("mocap settings recording on_change_dimension split_recording");
         TimeLoop.executeCommand("mocap settings recording chat_recording " + TimeLoop.trackChat);
         TimeLoop.executeCommand("mocap settings playback invulnerable_playback " + !TimeLoop.hurtLoopedPlayers);
         TimeLoop.executeCommand("mocap settings recording entity_tracking_distance 1");
