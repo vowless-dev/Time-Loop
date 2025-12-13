@@ -123,10 +123,6 @@ public class TimeLoop {
             return;
         }
 
-        // --- Fix: Segmented Recording Tracking ---
-        // The mocap mod's SPLIT_RECORDING feature handles the command-level split.
-        // It sets the old recording to WAITING_FOR_DECISION and starts a new one with the next index (.2, .3, etc.).
-        // We must manually update our loop system's index to match mocap's internal index.
         playerData.incrementActiveRecordingIndex();
 
         LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
