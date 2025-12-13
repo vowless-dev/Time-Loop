@@ -5,6 +5,7 @@ import com.vltno.timeloop.fabric.events.*;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.EntitySleepEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -45,6 +46,8 @@ public class TimeLoopFabric implements ModInitializer {
         ServerPlayerEvents.AFTER_RESPAWN.register(PlayerFabricEvent::afterRespawn);
 
         ServerTickEvents.END_SERVER_TICK.register(TickFabricEvent::onEndServerTick);
+
+        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register(PlayerFabricEvent::dimensionChange);
 
         LOOP_LOGGER.info("TimeLoop mod initialized successfully (Fabric)");
     }
