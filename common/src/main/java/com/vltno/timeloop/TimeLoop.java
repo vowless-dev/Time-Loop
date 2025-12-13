@@ -128,7 +128,7 @@ public class TimeLoop {
         // Manually stop the old recording and make a new one
         String playerName = playerData.getName();
         executeCommand(String.format("mocap recording stop -+mc.%s.%d", playerName, playerData.getActiveRecordingIndex()));
-        executeCommand("mocap recording start %s");
+        executeCommand(String.format("mocap recording start %s", playerName));
 
         playerData.incrementActiveRecordingIndex();
 
