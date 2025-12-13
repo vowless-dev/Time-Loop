@@ -102,4 +102,11 @@ public class TimeLoopNeoForge {
     public void afterRespawn(PlayerEvent.PlayerRespawnEvent event) {
         PlayerNeoForgeEvent.afterRespawn();
     }
+
+    @SubscribeEvent
+    public void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            PlayerNeoForgeEvent.dimensionChange(serverPlayer);
+        }
+    }
 }

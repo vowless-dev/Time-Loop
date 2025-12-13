@@ -13,11 +13,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -27,7 +30,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 public class TimeLoop {
 	public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
@@ -98,11 +103,46 @@ public class TimeLoop {
 		});
 	}
 
+    public static void handlePlayerDimensionChange(ServerPlayer player) {
+        if (!isLooping) return;
 
-	/**
-	 * Runs the next iteration of the loop.
-	 */
-	public static void runLoopIteration() {
+        // Log message for debugging dimension change
+        TimeLoop.LOOP_LOGGER.info("Player {} changed dimension to {}.",
+                player.getName().getString(), player.level().dimension().location().toString());
+
+        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().getName());
+
+        if (playerData == null) {
+            LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
+            return;
+        }
+
+        ResourceKey<Level> currentDimension = player.level().dimension();
+        ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
+
+        // Check if dimension has actually changed since the last update
+        if (currentDimension.equals(lastDimension) && lastDimension != null) {
+            return;
+        }
+
+        // Manually stop the old recording and make a new one
+        String playerName = playerData.getName();
+        executeCommand(String.format("mocap recording stop -+mc.%s.%d", playerName, playerData.getActiveRecordingIndex()));
+        executeCommand(String.format("mocap recording start %s", playerName));
+
+        playerData.incrementActiveRecordingIndex();
+
+        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
+                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
+
+        // Update the player's state
+        playerData.setLastDimensionKey(currentDimension);
+    }
+
+    /**
+     * Runs the next iteration of the loop.
+     */
+    public static void runLoopIteration() {
         if (!isLooping) {
             LOOP_LOGGER.warn("Tried to iterate but not looping!");
             return;
@@ -111,62 +151,87 @@ public class TimeLoop {
             stopLoop();
             return;
         }
-		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
-		saveRecordings();
-		removeOldSceneEntries();
-		startRecordings();
-		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
-		TimeLoop.executeCommand("mocap playback stop_all including_others");
+        LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
+        saveRecordings();
+        removeOldSceneEntries();
+        TimeLoop.executeCommand("mocap playback stop_all including_others");
+        startRecordings();
+        if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
-		loopSceneManager.forEachRecordingPlayer(playerData -> {
-			String playerName = playerData.getName();
-			String playerNickname = playerData.getNickname();
-			String playerSkin = playerData.getSkin();
-			Vec3 startPosition = playerData.getStartPosition();
-			Vec3 joinPosition = playerData.getJoinPosition();
-			CompoundTag inventoryTag = playerData.getInventoryTag();
-			
-			Player player = server.getPlayerList().getPlayerByName(playerName);
-			HolderLookup.Provider provider = server.registryAccess();
+        loopSceneManager.forEachRecordingPlayer(playerData -> {
+            String playerName = playerData.getName();
+            String playerNickname = playerData.getNickname();
+            String playerSkin = playerData.getSkin();
+            Vec3 startPosition = playerData.getStartPosition();
+            Vec3 joinPosition = playerData.getJoinPosition();
+            CompoundTag inventoryTag = playerData.getInventoryTag();
 
-			if (trackInventory) {
-				loadFullInventory(player, inventoryTag, provider);
-			}
+            Player player = server.getPlayerList().getPlayerByName(playerName);
+            if (player == null) {
+                LOOP_LOGGER.warn("Player {} is offline, skipping rewind.", playerName);
+                return;
+            }
 
-			switch (rewindType) {
-				case START_POSITION -> {
-					if (startPosition == null) {
-						LOOP_LOGGER.error("Player {} has no start position yet. Defaulting to join position.", playerName);
-						player.teleportTo(joinPosition.x, joinPosition.y, joinPosition.z);
-						return;
-					}
-					player.teleportTo(startPosition.x, startPosition.y, startPosition.z);
-				}
-				case JOIN_POSITION -> {
-					if (joinPosition == null) {
-						LOOP_LOGGER.error("Player {} has no join position yet. (somehow??)", playerName);
-						return;
-					}
-					player.teleportTo(joinPosition.x, joinPosition.y, joinPosition.z);
-				}
-                case SPAWN_POSITION -> {
-                    BlockPos spawnPosition = server.overworld().getSharedSpawnPos();
-                    if (spawnPosition == null) {
-                        LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
-                        return;
+            HolderLookup.Provider provider = server.registryAccess();
+
+            if (trackInventory) {
+                loadFullInventory(player, inventoryTag, provider);
+            }
+
+            if (!rewindType.equals(RewindTypes.NONE)) {
+                ServerLevel targetLevel = (ServerLevel) player.level();
+                Set<Relative> absoluteMovement = Collections.emptySet();
+                float yaw = player.getYRot();
+                float pitch = player.getXRot();
+                boolean setCamera = false;
+
+                double x = 0.0, y = 0.0, z = 0.0;
+                switch (rewindType) {
+                    case START_POSITION -> {
+                        if (startPosition == null) {
+                            LOOP_LOGGER.error("Player {} has no start position yet. Defaulting to join position.", playerName);
+                            x = joinPosition.x;
+                            y = joinPosition.y;
+                            z = joinPosition.z;
+                        } else {
+                            x = startPosition.x;
+                            y = startPosition.y;
+                            z = startPosition.z;
+                        }
                     }
-                    player.teleportTo(spawnPosition.getX(), spawnPosition.getY(), spawnPosition.getZ());
+                    case JOIN_POSITION -> {
+                        if (joinPosition == null) {
+                            LOOP_LOGGER.error("Player {} has no join position yet. (somehow??)", playerName);
+                            return;
+                        }
+                        x = joinPosition.x;
+                        y = joinPosition.y;
+                        z = joinPosition.z;
+                    }
+                    case SPAWN_POSITION -> {
+                        BlockPos spawnPosition = server.overworld().getSharedSpawnPos();
+                        if (spawnPosition == null) {
+                            LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
+                            return;
+                        }
+                        x = spawnPosition.getX();
+                        y = spawnPosition.getY();
+                        z = spawnPosition.getZ();
+                    }
                 }
-			}
-			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-			TimeLoop.executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
-		});
+                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch, setCamera);
+            }
+            playerData.setLastDimensionKey(player.level().dimension());
 
-		loopIteration++;
-		config.loopIteration = loopIteration;
-		config.save();
-		LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
-	}
+            String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+            TimeLoop.executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
+        });
+
+        loopIteration++;
+        config.loopIteration = loopIteration;
+        config.save();
+        LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
+    }
 
 	/**
 	 * Starts and initialises the loop.
@@ -179,7 +244,7 @@ public class TimeLoop {
 		if (showLoopInfo) {
 			loopBossBar.visible(loopType.equals(LoopTypes.TICKS) || loopType.equals(LoopTypes.TIME_OF_DAY));
 		}
-		
+
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			String playerName = playerData.getName();
 			Player player = server.getPlayerList().getPlayerByName(playerName);
@@ -208,27 +273,51 @@ public class TimeLoop {
 		// Start recording for every player
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			String playerName = playerData.getName();
+            playerData.resetActiveRecordingIndex();
 			executeCommand(String.format("mocap recording start %s", playerName));
 		});
 	}
 
-	/**
-	 * Saves the recordings.
-	 */
-	public static void saveRecordings() {
-		// Stop and save recordings for each player
-		loopSceneManager.forEachRecordingPlayer(playerData -> {
-			String playerName = playerData.getName();
-			String recordingName = playerName + "_" + System.currentTimeMillis();
+    /**
+     * Saves the recordings.
+     */
+    public static void saveRecordings() {
+        // Stop and save recordings for each player
+        loopSceneManager.forEachRecordingPlayer(playerData -> {
+            String playerName = playerData.getName();
+            String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+            int totalSegments = playerData.getActiveRecordingIndex();
+            int lastSegmentIndex = totalSegments;
 
-			LOOP_LOGGER.info("Processing recording for player: {}", playerName);
-			executeCommand(String.format("mocap recording stop -+mc.%s.1", playerName));
-			executeCommand(String.format("mocap recording save %s -+mc.%s.1", recordingName.toLowerCase(), playerName));
-            executeCommand(String.format("mocap scenes add_to %s %s", playerSceneName, recordingName.toLowerCase()));
-		});
-	}
+            // Iterate and save ALL active recording segments based on the index tracked in PlayerData.
+            for (int i = 1; i <= totalSegments; i++) {
+                String recordingToProcess = String.format("-+mc.%s.%d", playerName, i);
+                String recordingName = String.format("%s_loop%d_idx%d", playerName, loopIteration, i);
+
+                LOOP_LOGGER.info("Processing active recording segment {} for player: {}", i, playerName);
+
+                // If this is the currently recording segment, we must first STOP it.
+                // If it's an earlier segment, it's already in the 'waiting for decision' state
+                // (due to the dimension split), so a second 'stop' would DISCARD it.
+                if (i == lastSegmentIndex) {
+                    // Manually stop the currently active recording (e.g., -+mc.Dev.2 or -+mc.Dev.1 if no split)
+                    // This puts it into the 'waiting for decision' state.
+                    LOOP_LOGGER.info("Stopping final segment: {}", recordingToProcess);
+                    executeCommand(String.format("mocap recording stop %s", recordingToProcess));
+                } else {
+                    // If it's not the last segment, it's already in 'waiting for decision' from the split.
+                    LOOP_LOGGER.info("Segment {} assumed to be in 'waiting' state from dimension split.", i);
+                }
+
+                // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
+                executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
+
+                // Add the segment to the scene.
+                executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
+            }
+        });
+    }
 
 	/**
 	 * Stops the loop.
