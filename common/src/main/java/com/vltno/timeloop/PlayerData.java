@@ -3,6 +3,8 @@ package com.vltno.timeloop;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 public class PlayerData {
@@ -12,7 +14,9 @@ public class PlayerData {
     private Vec3 startPosition;
     private Vec3 joinPosition;
     private String inventoryTag;
-    
+    private ResourceKey<Level> lastDimensionKey;
+    private int activeRecordingIndex;
+
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
         this.nickname = nickname;
@@ -20,6 +24,8 @@ public class PlayerData {
         this.startPosition = null;
         this.joinPosition = joinPosition;
         this.setInventoryTag(inventoryTag);
+        this.lastDimensionKey = null;
+        this.activeRecordingIndex = 1;
     }
 
     // Getters and setters for player attributes
@@ -54,13 +60,13 @@ public class PlayerData {
     public Vec3 getJoinPosition() {
         return joinPosition;
     }
-    
+
     public void setJoinPosition(Vec3 newJoinPosition) {
         this.joinPosition = newJoinPosition;
     }
 
     public void setInventoryTag(CompoundTag inventoryTag) {
-        this.inventoryTag = inventoryTag.getAsString();
+        this.inventoryTag = inventoryTag.toString();
     }
 
     public CompoundTag getInventoryTag() {
@@ -76,15 +82,23 @@ public class PlayerData {
         return new CompoundTag();
     }
 
-    @Override
-    public String toString() {
-        return "PlayerData{" +
-                "name='" + name + '\'' +
-                ", nickname='" + nickname + '\'' +
-                ", skin='" + skin + '\'' +
-                ", join-position='" + joinPosition + '\'' +
-                ", start-position='" + startPosition + '\'' +
-                ", inventory-tag='" + inventoryTag + '\'' +
-                '}';
+    public ResourceKey<Level> getLastDimensionKey() {
+        return lastDimensionKey;
+    }
+
+    public void setLastDimensionKey(ResourceKey<Level> lastDimensionKey) {
+        this.lastDimensionKey = lastDimensionKey;
+    }
+
+    public int getActiveRecordingIndex() {
+        return activeRecordingIndex;
+    }
+
+    public void incrementActiveRecordingIndex() {
+        this.activeRecordingIndex++;
+    }
+
+    public void resetActiveRecordingIndex() {
+        this.activeRecordingIndex = 1;
     }
 }
