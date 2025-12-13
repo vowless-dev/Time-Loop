@@ -60,7 +60,7 @@ public class PlayerData {
     }
 
     public void setInventoryTag(CompoundTag inventoryTag) {
-        this.inventoryTag = inventoryTag.getAsString();
+        this.inventoryTag = inventoryTag.toString();
     }
 
     public CompoundTag getInventoryTag() {
