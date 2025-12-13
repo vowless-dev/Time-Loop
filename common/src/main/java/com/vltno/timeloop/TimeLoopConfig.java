@@ -21,6 +21,7 @@ public class TimeLoopConfig {
     public long timeSetting = 13000;
     public long startTimeOfDay = 0;
     public boolean trackTimeOfDay = false;
+    public int tickCounter = 0;
     public int ticksLeft;
 
     public boolean showLoopInfo = true;
