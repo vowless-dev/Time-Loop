@@ -217,7 +217,7 @@ public class TimeLoop {
             playerData.setLastDimensionKey(player.level().dimension());
 
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-			TimeLoop.executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
+			executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
 		});
 
 		loopIteration++;
