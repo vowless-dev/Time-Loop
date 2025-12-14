@@ -10,12 +10,16 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
-// Assuming TimeLoop.serverWorld is now 'net.minecraft.server.level.ServerLevel'
+
+import java.lang.reflect.Field;
+import java.sql.Time;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import static net.minecraft.network.chat.ComponentUtils.formatList;
 
 public class BaseCommands {
-
-    // Note: The parent builder needs to be dispatched by Commands.register(...)
-    // typically in your mod initializer or a dedicated command registration event.
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
 
         parentBuilder.then(Commands.literal("start")
@@ -61,11 +65,6 @@ public class BaseCommands {
     private static int skip(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         if (TimeLoop.isLooping) {
-            if (TimeLoop.serverLevel == null) {
-                source.sendFailure(Component.literal("Error: Server world not available yet."));
-                return 0;
-            }
-            
             TimeLoop.runLoopIteration();
           
             source.sendSuccess(() -> Component.literal("Loop skipped!"), true);
@@ -89,22 +88,86 @@ public class BaseCommands {
         return 0;
     }
 
-    private static int status(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        
-        String status = getString();
-        
-        source.sendSuccess(() -> Component.literal(status), false); 
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Status requested: {}", status);
-        return 1;
+    private static List<String> getTrackedItemsFromReflection() {
+        List<String> trackedItems = new ArrayList<>();
+
+        Class<?> timeLoopClass = TimeLoop.class;
+
+        for (Field field : timeLoopClass.getDeclaredFields()) {
+            if (field.getName().startsWith("track") && field.getType() == boolean.class) {
+                try {
+                    // In case fields aren't public
+                    field.setAccessible(true);
+
+                    if (field.getBoolean(null)) {
+                        String rawName = field.getName();
+
+                        // Convert "trackItems" to "Items"
+                        String baseName = rawName.substring("track".length());
+
+                        // Convert camelCase ("Items") to space-separated ("Items") and then lowercase ("items")
+                        String readableName = Pattern.compile("(?<=[a-z])(?=[A-Z])").matcher(baseName).replaceAll(" ").toLowerCase();
+                        trackedItems.add(readableName);
+                    }
+                } catch (IllegalAccessException e) {
+                    LoopCommands.LOOP_COMMANDS_LOGGER.error("Failed to access reflection field: " + field.getName(), e);
+                }
+            }
+        }
+        return trackedItems;
     }
 
-    private static @NotNull String getString() {
-        String loopTypeName = (TimeLoop.loopType != null) ? TimeLoop.loopType.name() : "UNKNOWN";
-        String extras = " Looping on " + loopTypeName + "." + (TimeLoop.isLooping && TimeLoop.loopType == LoopTypes.TICKS ? " Ticks Left: " + TimeLoop.ticksLeft : "") + (TimeLoop.trackItems ? " Tracking items." : "");
-        return TimeLoop.isLooping ?
-                "Loop is active. Current iteration: " + TimeLoop.loopIteration + extras :
-                "Loop is inactive. Last iteration: " + TimeLoop.loopIteration + extras;
+    private static @NotNull String formatList(List<String> items) {
+        if (items.size() == 0) return "";
+        if (items.size() == 1) return items.get(0);
+        if (items.size() == 2) return items.get(0) + " and " + items.get(1);
+
+        // For three or more items: use commas, and "and" for the last item
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) {
+                if (i == items.size() - 1) {
+                    sb.append(", and ");
+                } else {
+                    sb.append(", ");
+                }
+            }
+            sb.append(items.get(i));
+        }
+        return sb.toString();
+    }
+
+    private static int status(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+
+        List<String> trackedItems = getTrackedItemsFromReflection();
+
+        String tracking;
+        int count = trackedItems.size();
+
+        if (count == 0) {
+            tracking = ""; // Nothing tracked
+        } else if (count == 1) {
+            // Only one item is on: "Tracking items."
+            tracking = "Tracking " + trackedItems.get(0) + ".";
+        } else {
+            // Two or more items are on
+            tracking = "Tracking " + formatList(trackedItems) + ".";
+        }
+
+        String loopTypeName = TimeLoop.loopType.getSerializedName().toLowerCase().replace("_", "");
+
+        String extras = "Looping on " + loopTypeName + "."
+                + (TimeLoop.isLooping && TimeLoop.loopType == LoopTypes.TICKS ? " Ticks Left: " + TimeLoop.ticksLeft : "")
+                + (tracking.isEmpty() ? "" : " " + tracking);
+
+        String status = TimeLoop.isLooping ?
+                "Loop is running. Iteration: " + TimeLoop.loopIteration + ". " + extras :
+                "Loop is not running. Iteration: " + TimeLoop.loopIteration + ". " + extras;
+
+        source.sendSuccess(() -> Component.literal(status), false);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Status requested: {}", status);
+        return 1;
     }
 
     private static int reset(CommandContext<CommandSourceStack> context) {
