@@ -12,32 +12,58 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.StringRepresentable;
 
 import java.util.Arrays;
 
 public class SettingsCommands {
-
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
         LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings")
                 .requires(source -> source.hasPermission(2));
 
         settingsNode.then(Commands.literal("setLoopType")
                 .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal("Loop type is set to: " + TimeLoop.loopType), false);
+                    context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
                     return 1;
                 })
-                .then(Commands.argument("loopType", StringArgumentType.word())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(LoopTypes.values()).map(LoopTypes::getSerializedName), builder))
-                        .executes(SettingsCommands::setLoopType)));
+                .then(Commands.literal("ticks")
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20))
+                                .executes(SettingsCommands::setLoopTypeTicks)))
 
-        settingsNode.then(Commands.literal("setLength")
-                .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal("Loop length is set to: " + TimeLoop.config.loopLengthTicks + " ticks"), false);
-                    return 1;
-                })
-                .then(Commands.argument("ticks", IntegerArgumentType.integer(20))
-                        .executes(SettingsCommands::setLoopLength)));
+                .then(Commands.literal("time")
+                        .then(Commands.argument("time", IntegerArgumentType.integer(0, 24000))
+                                .executes(SettingsCommands::setLoopTypeTime)))
+
+                .then(Commands.literal("sleep")
+                        .executes(context -> {
+                            TimeLoop.loopType = LoopTypes.SLEEP;
+                            TimeLoop.config.loopType = LoopTypes.SLEEP;
+
+                            TimeLoop.config.save();
+
+                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
+                            return 1;
+                        }))
+
+                .then(Commands.literal("death")
+                        .executes(context -> {
+                            TimeLoop.loopType = LoopTypes.DEATH;
+                            TimeLoop.config.loopType = LoopTypes.DEATH;
+
+                            TimeLoop.config.save();
+
+                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
+                            return 1;
+                        }))
+                .then(Commands.literal("manual")
+                        .executes(context -> {
+                            TimeLoop.loopType = LoopTypes.MANUAL;
+                            TimeLoop.config.loopType = LoopTypes.MANUAL;
+
+                            TimeLoop.config.save();
+
+                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
+                            return 1;
+                        })));
 
         settingsNode.then(Commands.literal("maxLoops")
                 .executes(context -> {
@@ -46,14 +72,6 @@ public class SettingsCommands {
                 })
                 .then(Commands.argument("value", IntegerArgumentType.integer(0))
                         .executes(SettingsCommands::maxLoops)));
-
-        settingsNode.then(Commands.literal("setTimeOfDay")
-                .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal("Time of day is set to: " + TimeLoop.config.timeSetting), false);
-                    return 1;
-                })
-                .then(Commands.argument("time", IntegerArgumentType.integer(0, 24000))
-                        .executes(SettingsCommands::setTimeOfDay)));
 
         settingsNode.then(Commands.literal("modifyPlayer")
                 .then(Commands.argument("targetPlayer", StringArgumentType.string())
@@ -75,32 +93,28 @@ public class SettingsCommands {
         parentBuilder.then(settingsNode);
     }
 
-    private static int setLoopType(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        String loopTypeStr = StringArgumentType.getString(context, "loopType");
-        try {
-            LoopTypes newLoopType = LoopTypes.valueOf(loopTypeStr.toUpperCase());
-            TimeLoop.loopType = newLoopType;
-            TimeLoop.config.loopType = newLoopType;
-            TimeLoop.config.save();
+    private static String getLoopTypeText() {
+        String text = "Loop type is set to " + TimeLoop.config.loopType.getSerializedName().toLowerCase().replace("_", " ");
+        switch (TimeLoop.config.loopType) {
+            case TICKS -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
 
-            if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
-                TimeLoop.loopBossBar.visible(newLoopType.equals(LoopTypes.TICKS) || newLoopType.equals(LoopTypes.TIME_OF_DAY));
-            }
-          
-            String extra = (newLoopType == LoopTypes.MANUAL) ? ". Use '/loop skip' to advance to the next iteration." : "";
-            source.sendSuccess(() -> Component.literal("Loop type is set to: " + newLoopType + extra), true);
-            LoopCommands.LOOP_COMMANDS_LOGGER.info("Loop type set to {}", newLoopType);
-            return 1;
-        } catch (IllegalArgumentException e) {
-            source.sendFailure(Component.literal("Invalid loop type: " + loopTypeStr));
-            return 0;
+            case TIME_OF_DAY -> text += " [" + TimeLoop.config.timeSetting + " time]";
+
+            case MANUAL -> text += ". Use '/loop skip' to advance to the next iteration.";
+
+            default -> text += ".";
         }
+
+        return text;
     }
 
-    private static int setLoopLength(CommandContext<CommandSourceStack> context) {
+    private static int setLoopTypeTicks(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         int newTicks = IntegerArgumentType.getInteger(context, "ticks");
+
+        TimeLoop.loopType = LoopTypes.TICKS;
+        TimeLoop.config.loopType = LoopTypes.TICKS;
+
         TimeLoop.loopLengthTicks = newTicks;
         TimeLoop.config.loopLengthTicks = newTicks;
 
@@ -109,30 +123,39 @@ public class SettingsCommands {
 
         TimeLoop.config.save();
 
-        source.sendSuccess(() -> Component.literal("Loop length is set to: " + newTicks + " ticks"), true);
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Loop length set to {} ticks", newTicks);
+        source.sendSuccess(() -> Component.literal(getLoopTypeText()), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info(getLoopTypeText());
+        return 1;
+    }
+
+    private static int setLoopTypeTime(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        int newTime = IntegerArgumentType.getInteger(context, "time");
+
+        TimeLoop.loopType = LoopTypes.TIME_OF_DAY;
+        TimeLoop.config.loopType = LoopTypes.TIME_OF_DAY;
+
+        TimeLoop.timeSetting = newTime;
+        TimeLoop.config.timeSetting = newTime;
+
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal(getLoopTypeText()), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info(getLoopTypeText());
         return 1;
     }
 
     private static int maxLoops(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         int maxLoops = IntegerArgumentType.getInteger(context, "value");
+
         TimeLoop.maxLoops = maxLoops;
         TimeLoop.config.maxLoops = maxLoops;
+
         TimeLoop.config.save();
+
         source.sendSuccess(() -> Component.literal("Max loops is set to: " + maxLoops), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Max loops set to {}", maxLoops);
-        return 1;
-    }
-
-    private static int setTimeOfDay(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        int newTime = IntegerArgumentType.getInteger(context, "time");
-        TimeLoop.timeSetting = newTime;
-        TimeLoop.config.timeSetting = newTime;
-        TimeLoop.config.save();
-        source.sendSuccess(() -> Component.literal("Time of day is set to: " + newTime), true);
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Time of day set to {}", newTime);
         return 1;
     }
 
@@ -154,8 +177,10 @@ public class SettingsCommands {
         String rewindTypeStr = StringArgumentType.getString(context, "rewindType");
         try {
             RewindTypes newRewindType = RewindTypes.valueOf(rewindTypeStr.toUpperCase());
+
             TimeLoop.rewindType = newRewindType;
             TimeLoop.config.rewindType = newRewindType;
+
             TimeLoop.config.save();
 
             source.sendSuccess(() -> Component.literal("Rewinding position is set to: " + newRewindType), true);
