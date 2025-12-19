@@ -12,8 +12,10 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 public class SettingsCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
@@ -27,43 +29,28 @@ public class SettingsCommands {
                 })
                 .then(Commands.literal("ticks")
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20))
-                                .executes(SettingsCommands::setLoopTypeTicks)))
+                                .executes(context -> setLoopType(context, LoopTypes.TICKS, "ticks", (newTicks) -> {
+                                    TimeLoop.loopLengthTicks = newTicks;
+                                    TimeLoop.config.loopLengthTicks = newTicks;
+
+                                    TimeLoop.ticksLeft = newTicks;
+                                    TimeLoop.config.ticksLeft = newTicks;
+                                }))))
 
                 .then(Commands.literal("time")
                         .then(Commands.argument("time", IntegerArgumentType.integer(0, 24000))
-                                .executes(SettingsCommands::setLoopTypeTime)))
+                                .executes(context -> setLoopType(context, LoopTypes.TIME_OF_DAY, "time", (newTime) -> {
+                                    TimeLoop.timeSetting = newTime;
+                                    TimeLoop.config.timeSetting = newTime;
+                                }))))
 
                 .then(Commands.literal("sleep")
-                        .executes(context -> {
-                            TimeLoop.loopType = LoopTypes.SLEEP;
-                            TimeLoop.config.loopType = LoopTypes.SLEEP;
-
-                            TimeLoop.config.save();
-
-                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
-                            return 1;
-                        }))
+                        .executes(context -> setLoopType(context, LoopTypes.SLEEP, null, null)))
 
                 .then(Commands.literal("death")
-                        .executes(context -> {
-                            TimeLoop.loopType = LoopTypes.DEATH;
-                            TimeLoop.config.loopType = LoopTypes.DEATH;
-
-                            TimeLoop.config.save();
-
-                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
-                            return 1;
-                        }))
+                        .executes(context -> setLoopType(context, LoopTypes.DEATH, null, null)))
                 .then(Commands.literal("manual")
-                        .executes(context -> {
-                            TimeLoop.loopType = LoopTypes.MANUAL;
-                            TimeLoop.config.loopType = LoopTypes.MANUAL;
-
-                            TimeLoop.config.save();
-
-                            context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
-                            return 1;
-                        })));
+                        .executes(context -> setLoopType(context, LoopTypes.MANUAL, null, null))));
 
         settingsNode.then(Commands.literal("maxLoops")
                 .executes(context -> {
@@ -85,7 +72,7 @@ public class SettingsCommands {
                     return 1;
                 })
                 .then(Commands.argument("rewindType", StringArgumentType.word())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(RewindTypes.values()).map(RewindTypes::getSerializedName), builder))
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(RewindTypes.values()).map(RewindTypes::getCommandName), builder))
                         .executes(SettingsCommands::setRewindType)));
         
         TogglesCommands.register(settingsNode);
@@ -94,7 +81,7 @@ public class SettingsCommands {
     }
 
     private static String getLoopTypeText() {
-        String text = "Loop type is set to " + TimeLoop.config.loopType.getSerializedName().toLowerCase().replace("_", " ");
+        String text = "Loop type is set to " + TimeLoop.config.loopType.getSerializedName();
         switch (TimeLoop.config.loopType) {
             case TICKS -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
 
@@ -108,39 +95,25 @@ public class SettingsCommands {
         return text;
     }
 
-    private static int setLoopTypeTicks(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        int newTicks = IntegerArgumentType.getInteger(context, "ticks");
+    private static int setLoopType(CommandContext<CommandSourceStack> context, LoopTypes loopType, @Nullable String argumentName, @Nullable Consumer<Integer> setter) {
+        TimeLoop.loopType = loopType;
+        TimeLoop.config.loopType = loopType;
 
-        TimeLoop.loopType = LoopTypes.TICKS;
-        TimeLoop.config.loopType = LoopTypes.TICKS;
+        if (argumentName != null && setter != null) {
+            try {
+                int value = IntegerArgumentType.getInteger(context, argumentName);
 
-        TimeLoop.loopLengthTicks = newTicks;
-        TimeLoop.config.loopLengthTicks = newTicks;
+                setter.accept(value);
 
-        TimeLoop.ticksLeft = newTicks;
-        TimeLoop.config.ticksLeft = newTicks;
-
-        TimeLoop.config.save();
-
-        source.sendSuccess(() -> Component.literal(getLoopTypeText()), true);
-        LoopCommands.LOOP_COMMANDS_LOGGER.info(getLoopTypeText());
-        return 1;
-    }
-
-    private static int setLoopTypeTime(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        int newTime = IntegerArgumentType.getInteger(context, "time");
-
-        TimeLoop.loopType = LoopTypes.TIME_OF_DAY;
-        TimeLoop.config.loopType = LoopTypes.TIME_OF_DAY;
-
-        TimeLoop.timeSetting = newTime;
-        TimeLoop.config.timeSetting = newTime;
+            } catch (IllegalArgumentException e) {
+                LoopCommands.LOOP_COMMANDS_LOGGER.error(e.getMessage());
+                return 0;
+            }
+        }
 
         TimeLoop.config.save();
 
-        source.sendSuccess(() -> Component.literal(getLoopTypeText()), true);
+        context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
         LoopCommands.LOOP_COMMANDS_LOGGER.info(getLoopTypeText());
         return 1;
     }
@@ -160,14 +133,15 @@ public class SettingsCommands {
     }
 
     private static int modifyPlayer(CommandContext<CommandSourceStack> context) {
+        // TODO! - Add proper error messages!!!
         CommandSourceStack source = context.getSource();
         String targetPlayer = StringArgumentType.getString(context, "targetPlayer");
-        String newName = StringArgumentType.getString(context, "newName");
-        String newSkin = StringArgumentType.getString(context, "newSkin");
-        
+        String newName = StringArgumentType.getString(context, "newName").replace(" ", "").toLowerCase();
+        String newSkin = StringArgumentType.getString(context, "newSkin").replace(" ", "").toLowerCase(); //TODO! - add url support for skins
+
         TimeLoop.modifyPlayerAttributes(targetPlayer, newName, newSkin);
-        source.sendSuccess(() -> Component.literal("Attempted to modify player " + targetPlayer), true); // Generic success message
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Attempted to modify player {} with name {} and skin {}", targetPlayer, newName, newSkin);
+        source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, newSkin);
         return 1;
     }
 
