@@ -31,6 +31,7 @@ public class PlayerData {
         this.lastDimensionKey = null;
         this.activeRecordingIndex = 1;
         this.activeSubsceneIndex = 0;
+        this.tempOffsets = new ArrayList<Float>();
         this.tempOffsets.add(0f);
     }
 
