@@ -25,7 +25,7 @@ public class TogglesCommands {
 
         togglesNode.then(toggleCommand(TimeLoop.trackItems, "trackItems", TogglesCommands::trackItems));
 
-        togglesNode.then(toggleCommand(TimeLoop.trackInventory, "trackItems", TogglesCommands::trackInventory));
+        togglesNode.then(toggleCommand(TimeLoop.trackInventory, "trackInventory", TogglesCommands::trackInventory));
 
         togglesNode.then(toggleCommand(TimeLoop.displayTimeInTicks, "displayTimeInTicks", TogglesCommands::displayTimeInTicks));
 
