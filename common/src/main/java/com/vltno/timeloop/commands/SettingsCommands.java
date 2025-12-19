@@ -22,35 +22,46 @@ public class SettingsCommands {
         LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings")
                 .requires(source -> source.hasPermission(2));
 
-        settingsNode.then(Commands.literal("setLoopType")
+        var setLoopTypeNode = Commands.literal("setLoopType")
                 .executes(context -> {
                     context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
                     return 1;
-                })
-                .then(Commands.literal("ticks")
-                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20))
-                                .executes(context -> setLoopType(context, LoopTypes.TICKS, "ticks", (newTicks) -> {
+                });
+
+        for (LoopTypes loopType : LoopTypes.values()) {
+            String commandName = loopType.getCommandName();
+
+            switch (loopType) {
+                case TICKS -> {
+                    setLoopTypeNode.then(Commands.literal(commandName)
+                        .then(Commands.argument(commandName, IntegerArgumentType.integer(20))
+                                .executes(context -> setLoopType(context, loopType, commandName, (newTicks) -> {
                                     TimeLoop.loopLengthTicks = newTicks;
                                     TimeLoop.config.loopLengthTicks = newTicks;
 
                                     TimeLoop.ticksLeft = newTicks;
                                     TimeLoop.config.ticksLeft = newTicks;
-                                }))))
+                                }))));
+                }
 
-                .then(Commands.literal("time")
-                        .then(Commands.argument("time", IntegerArgumentType.integer(0, 24000))
-                                .executes(context -> setLoopType(context, LoopTypes.TIME_OF_DAY, "time", (newTime) -> {
+                case TIME_OF_DAY -> {
+                    String argumentName = commandName.split("_")[0];
+                    setLoopTypeNode.then(Commands.literal(commandName)
+                        .then(Commands.argument(argumentName, IntegerArgumentType.integer(0, 24000))
+                                .executes(context -> setLoopType(context, loopType, argumentName, (newTime) -> {
                                     TimeLoop.timeSetting = newTime;
                                     TimeLoop.config.timeSetting = newTime;
-                                }))))
+                                }))));
+                }
 
-                .then(Commands.literal("sleep")
-                        .executes(context -> setLoopType(context, LoopTypes.SLEEP, null, null)))
+                default -> {
+                    setLoopTypeNode.then(Commands.literal(commandName)
+                                .executes(context -> setLoopType(context, loopType, null, null)));
+                }
+            }
+        }
 
-                .then(Commands.literal("death")
-                        .executes(context -> setLoopType(context, LoopTypes.DEATH, null, null)))
-                .then(Commands.literal("manual")
-                        .executes(context -> setLoopType(context, LoopTypes.MANUAL, null, null))));
+        settingsNode.then(setLoopTypeNode);
 
         settingsNode.then(Commands.literal("maxLoops")
                 .executes(context -> {
@@ -157,8 +168,8 @@ public class SettingsCommands {
 
             TimeLoop.config.save();
 
-            source.sendSuccess(() -> Component.literal("Rewinding position is set to: " + newRewindType), true);
-            LoopCommands.LOOP_COMMANDS_LOGGER.info("Rewind position set to {}", newRewindType);
+            source.sendSuccess(() -> Component.literal("Rewind type is set to: " + newRewindType), true);
+            LoopCommands.LOOP_COMMANDS_LOGGER.info("Rewind type set to {}", newRewindType);
             return 1;
         } catch (IllegalArgumentException e) {
             source.sendFailure(Component.literal("Invalid rewind type: " + rewindTypeStr));
