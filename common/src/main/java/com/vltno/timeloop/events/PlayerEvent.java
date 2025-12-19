@@ -17,7 +17,7 @@ public class PlayerEvent {
 
     public static void dimensionChange(ServerPlayer player) {
         if (!TimeLoop.isLooping) return;
-        TimeLoop.LOOP_LOGGER.info("{} CHANGED DIMENSION", player.getGameProfile().name());
+        TimeLoop.LOOP_LOGGER.info("{} CHANGED DIMENSION", player.getName());
         TimeLoop.handlePlayerDimensionChange(player);
     }
 }

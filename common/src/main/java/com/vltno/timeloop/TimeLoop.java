@@ -104,10 +104,6 @@ public class TimeLoop {
     public static void handlePlayerDimensionChange(ServerPlayer player) {
         if (!isLooping) return;
 
-        // Log message for debugging dimension change
-        LOOP_LOGGER.info("Player {} changed dimension to {}.",
-                player.getName().getString(), player.level().dimension().location().toString());
-
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().name());
 
         if (playerData == null) {
@@ -124,6 +120,7 @@ public class TimeLoop {
         }
 
         playerData.incrementActiveRecordingIndex();
+        executeCommand(String.format("mocap scenes modify .%s %03d-%s_loop%d_idx%d", loopSceneManager.getPlayerSceneName(playerData.getName()), playerData.getLatestSubsceneIndex(), loopIteration, playerData.getActiveRecordingIndex()));
 
         LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
                 player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
@@ -217,7 +214,7 @@ public class TimeLoop {
             playerData.setLastDimensionKey(player.level().dimension());
 
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-			executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
+			executeCommand(String.format("mocap playback start .%s '%s' skin_from_player '%s'", playerSceneName, playerNickname, playerSkin));
 		});
 
 		loopIteration++;
@@ -337,16 +334,11 @@ public class TimeLoop {
     }
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, String newSkin) {
-		String playerSceneName = loopSceneManager.getPlayerSceneName(targetPlayerName);
-		executeCommand(String.format("mocap scenes modify .%s %s player_skin skin_from_player %s", playerSceneName, newPlayerNickname, newSkin));
+        PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
 
-		loopSceneManager.forEachRecordingPlayer(playerData -> {
-			if (playerData.getName().equals(targetPlayerName)) {
-				playerData.setNickname(newPlayerNickname);
-				playerData.setSkin(newSkin);
-				LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin);
-			}
-		});
+        targetPlayer.setNickname(newPlayerNickname);
+        targetPlayer.setSkin(newSkin);
+        LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin);
 	}
 
 	/**
@@ -430,12 +422,16 @@ public class TimeLoop {
 	 * @param ticksLeft A int value.
 	 */
 	public static String convertTicksToTime(int ticksLeft) {
-		int timeLeft = ticksLeft / 20;
-		int hours = timeLeft / 3600;
-		int minutes = (timeLeft % 3600) / 60;
-		int seconds = timeLeft % 60;
+		int time = ticksLeft / 20;
+		int hours = time / 3600;
+		int minutes = (time % 3600) / 60;
+		int seconds = time % 60;
 		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
 	}
+
+    public static Float convertTicksToSeconds(int ticks) {
+        return ticks / 20f;
+    }
 
     private static final EquipmentSlot[] ARMOR_SLOTS = new EquipmentSlot[] {
             EquipmentSlot.FEET,

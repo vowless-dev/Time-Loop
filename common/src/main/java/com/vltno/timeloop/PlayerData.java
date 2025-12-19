@@ -7,6 +7,8 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+
 public class PlayerData {
     private final String name;
     private String nickname;
@@ -16,6 +18,8 @@ public class PlayerData {
     private String inventoryTag;
     private ResourceKey<Level> lastDimensionKey;
     private int activeRecordingIndex;
+    private int activeSubsceneIndex;
+    private ArrayList<Float> tempOffsets;
     
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
@@ -26,6 +30,8 @@ public class PlayerData {
         this.setInventoryTag(inventoryTag);
         this.lastDimensionKey = null;
         this.activeRecordingIndex = 1;
+        this.activeSubsceneIndex = 0;
+        this.tempOffsets.add(0.0f);
     }
 
     // Getters and setters for player attributes
@@ -100,5 +106,26 @@ public class PlayerData {
 
     public void resetActiveRecordingIndex() {
         this.activeRecordingIndex = 1;
+    }
+
+    public int getActiveSubsceneIndex() {
+        return activeSubsceneIndex;
+    }
+
+    public void incrementActiveSubsceneIndex() {
+        this.activeSubsceneIndex++;
+    }
+
+    public void resetActiveSubsceneIndex() {
+        this.activeSubsceneIndex = 1;
+    }
+
+    public void addTempOffset(Float value) {
+        this.tempOffsets.add(value);
+    }
+
+    public void resetTempOffsets() {
+        this.tempOffsets.clear();
+        this.tempOffsets.add(0.0f);
     }
 }
