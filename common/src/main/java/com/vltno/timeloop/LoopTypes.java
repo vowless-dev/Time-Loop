@@ -14,4 +14,8 @@ public enum LoopTypes implements StringRepresentable {
     public @NotNull String getSerializedName() {
         return name().toLowerCase().replace("_", " ");
     }
+
+    public @NotNull String getCommandName() {
+        return name().toLowerCase();
+    }
 }
