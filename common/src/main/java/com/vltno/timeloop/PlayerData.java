@@ -31,10 +31,9 @@ public class PlayerData {
         this.lastDimensionKey = null;
         this.activeRecordingIndex = 1;
         this.activeSubsceneIndex = 0;
-        this.tempOffsets.add(0.0f);
+        this.tempOffsets.add(0f);
     }
 
-    // Getters and setters for player attributes
     public String getName() {
         return name;
     }
@@ -120,12 +119,23 @@ public class PlayerData {
         this.activeSubsceneIndex = 1;
     }
 
-    public void addTempOffset(Float value) {
+    public void addTempOffset(float value) {
         this.tempOffsets.add(value);
+    }
+
+    public float getTempOffset(int index) {
+        if (index == -1) {
+            return tempOffsets.getLast();
+        }
+        return tempOffsets.get(index);
     }
 
     public void resetTempOffsets() {
         this.tempOffsets.clear();
-        this.tempOffsets.add(0.0f);
+        this.tempOffsets.add(0f);
+    }
+
+    public ArrayList<Float> getTempOffsets() {
+        return tempOffsets;
     }
 }

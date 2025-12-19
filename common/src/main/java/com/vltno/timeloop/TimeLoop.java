@@ -104,7 +104,7 @@ public class TimeLoop {
     public static void handlePlayerDimensionChange(ServerPlayer player) {
         if (!isLooping) return;
 
-        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getGameProfile().name());
+        PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
 
         if (playerData == null) {
             LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
@@ -120,10 +120,12 @@ public class TimeLoop {
         }
 
         playerData.incrementActiveRecordingIndex();
-        executeCommand(String.format("mocap scenes modify .%s %03d-%s_loop%d_idx%d", loopSceneManager.getPlayerSceneName(playerData.getName()), playerData.getLatestSubsceneIndex(), loopIteration, playerData.getActiveRecordingIndex()));
 
-        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
-                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
+        playerData.addTempOffset(0);
+        playerData.addTempOffset(convertTicksToSeconds(tickCounter));
+
+        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}. Temp offsets are {}",
+                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
 
         // Update the player's state
         playerData.setLastDimensionKey(currentDimension);
@@ -264,6 +266,7 @@ public class TimeLoop {
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			String playerName = playerData.getName();
             playerData.resetActiveRecordingIndex();
+            playerData.resetTempOffsets();
 			executeCommand(String.format("mocap recording start %s", playerName));
 		});
 	}
@@ -303,8 +306,15 @@ public class TimeLoop {
                 // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
                 executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
 
-                // Add the segment to the scene.
                 executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
+
+                playerData.incrementActiveSubsceneIndex();
+
+                LOOP_LOGGER.info("Tick counter: " + tickCounter);
+                LOOP_LOGGER.info("Ticks left: " + ticksLeft);
+                LOOP_LOGGER.info("i: " + i);
+                LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
+                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, playerData.getActiveRecordingIndex(), playerData.getTempOffset(i - 1)));
             }
         });
 	}
@@ -418,18 +428,16 @@ public class TimeLoop {
 
 	/**
 	 * Converts time in ticks to HH:MM:SS
-	 *
-	 * @param ticksLeft A int value.
 	 */
-	public static String convertTicksToTime(int ticksLeft) {
-		int time = ticksLeft / 20;
+	public static String convertTicksToTime(int ticks) {
+		int time = ticks / 20;
 		int hours = time / 3600;
 		int minutes = (time % 3600) / 60;
 		int seconds = time % 60;
 		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
 	}
 
-    public static Float convertTicksToSeconds(int ticks) {
+    public static float convertTicksToSeconds(int ticks) {
         return ticks / 20f;
     }
 
