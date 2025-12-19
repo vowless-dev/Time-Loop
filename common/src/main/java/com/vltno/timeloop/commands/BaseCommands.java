@@ -152,7 +152,7 @@ public class BaseCommands {
             tracking = "Tracking " + formatList(trackedItems) + ".";
         }
 
-        String loopTypeName = TimeLoop.loopType.getSerializedName().toLowerCase().replace("_", "");
+        String loopTypeName = TimeLoop.loopType.getSerializedName();
 
         String extras = "Looping on " + loopTypeName + "."
                 + (TimeLoop.isLooping && TimeLoop.loopType == LoopTypes.TICKS ? " Ticks Left: " + TimeLoop.ticksLeft : "")
