@@ -2,10 +2,7 @@ package com.vltno.timeloop.commands;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import com.vltno.timeloop.LoopCommands;
-import com.vltno.timeloop.LoopTypes;
-import com.vltno.timeloop.TimeLoop;
-import com.vltno.timeloop.TimeLoopConfig;
+import com.vltno.timeloop.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
@@ -155,7 +152,7 @@ public class BaseCommands {
             tracking = "Tracking " + formatList(trackedItems) + ".";
         }
 
-        String loopTypeName = TimeLoop.loopType.getSerializedName().toLowerCase().replace("_", "");
+        String loopTypeName = TimeLoop.loopType.getSerializedName();
 
         String extras = "Looping on " + loopTypeName + "."
                 + (TimeLoop.isLooping && TimeLoop.loopType == LoopTypes.TICKS ? " Ticks Left: " + TimeLoop.ticksLeft : "")
@@ -200,6 +197,7 @@ public class BaseCommands {
             TimeLoop.executeCommand(String.format("mocap scenes remove %s", playerSceneName));
             TimeLoop.executeCommand(String.format("mocap scenes add %s", playerSceneName));
         });
+        TimeLoop.loopSceneManager.forEachRecordingPlayer(PlayerData::resetActiveSubsceneIndex);
 
         TimeLoop.loopIteration = 0;
         TimeLoop.config.loopIteration = 0;

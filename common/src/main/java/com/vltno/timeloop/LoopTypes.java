@@ -12,6 +12,10 @@ public enum LoopTypes implements StringRepresentable {
 
     @Override
     public @NotNull String getSerializedName() {
-        return name();
+        return name().toLowerCase().replace("_", " ");
+    }
+
+    public @NotNull String getCommandName() {
+        return name().toLowerCase();
     }
 }

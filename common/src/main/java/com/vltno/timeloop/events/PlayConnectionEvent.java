@@ -12,6 +12,8 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 
 public class PlayConnectionEvent {
@@ -37,27 +39,31 @@ public class PlayConnectionEvent {
 
             TimeLoop.LOOP_LOGGER.info("First start detected, sending message to op(s).");
 
-            Component modrinthLink = Component.literal("https://modrinth.com/mod/timeloop")
-                    .withStyle(Style.EMPTY
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://modrinth.com/mod/timeloop"))
-                            .withColor(ChatFormatting.BLUE)
-                            .withUnderlined(true)
-                    );
+            try {
+                Component modrinthLink = Component.literal("https://modrinth.com/mod/timeloop")
+                        .withStyle(Style.EMPTY
+                                .withClickEvent(new ClickEvent.OpenUrl(new URI("https://modrinth.com/mod/timeloop")))
+                                .withColor(ChatFormatting.BLUE)
+                                .withUnderlined(true)
+                        );
 
-            Component discordLink = Component.literal("https://discord.gg/nzDETZhqur")
-                    .withStyle(Style.EMPTY
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/nzDETZhqur"))
-                            .withColor(ChatFormatting.BLUE)
-                            .withUnderlined(true)
-                    );
+                Component discordLink = Component.literal("https://discord.gg/nzDETZhqur")
+                        .withStyle(Style.EMPTY
+                                .withClickEvent(new ClickEvent.OpenUrl(new URI("https://discord.gg/nzDETZhqur")))
+                                .withColor(ChatFormatting.BLUE)
+                                .withUnderlined(true)
+                        );
 
-            // Check if player is OP and send message directly
-            if (server.getPlayerList().isOp(player.getGameProfile())) {
-                player.sendSystemMessage(Component.literal("Use '/loop start' to start the time loop!"));
-                player.sendSystemMessage(Component.literal("Settings: '/loop settings'"));
-                player.sendSystemMessage(Component.literal("Toggles: '/loop settings toggles'"));
-                player.sendSystemMessage(Component.literal("Information: ").append(modrinthLink));
-                player.sendSystemMessage(Component.literal("Help: ").append(discordLink));
+                // Check if player is OP and send message directly
+                if (server.getPlayerList().isOp(player.nameAndId())) {
+                    player.sendSystemMessage(Component.literal("Use '/loop start' to start the time loop!"));
+                    player.sendSystemMessage(Component.literal("Settings: '/loop settings'"));
+                    player.sendSystemMessage(Component.literal("Toggles: '/loop settings toggles'"));
+                    player.sendSystemMessage(Component.literal("Information: ").append(modrinthLink));
+                    player.sendSystemMessage(Component.literal("Help: ").append(discordLink));
+                }
+            } catch (URISyntaxException e) {
+                TimeLoop.LOOP_LOGGER.error("URISyntaxException: " + e);
             }
         }
 

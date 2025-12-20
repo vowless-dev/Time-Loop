@@ -75,7 +75,7 @@ public class TimeLoopNeoForge {
         if (event.getEntity() instanceof ServerPlayer player) {
             // Get the network connection handler from the player
             ServerGamePacketListenerImpl connection = player.connection;
-            MinecraftServer server = player.server; // Get server from player
+            MinecraftServer server = player.level().getServer(); // Get server from player
             
             PlayConnectionNeoForgeEvent.onJoin(connection, server);
         } else {

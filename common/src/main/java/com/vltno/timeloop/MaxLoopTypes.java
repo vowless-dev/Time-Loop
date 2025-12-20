@@ -3,11 +3,9 @@ package com.vltno.timeloop;
 import net.minecraft.util.StringRepresentable;
 import org.jetbrains.annotations.NotNull;
 
-public enum RewindTypes implements StringRepresentable {
-    NONE,
-    START_POSITION,
-    JOIN_POSITION,
-    SPAWN_POSITION;
+public enum MaxLoopTypes implements StringRepresentable {
+    STOP_LOOP,
+    KEEP_NEWEST;
 
     @Override
     public @NotNull String getSerializedName() {
