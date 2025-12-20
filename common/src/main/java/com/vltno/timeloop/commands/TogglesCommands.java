@@ -89,6 +89,8 @@ public class TogglesCommands {
         TimeLoop.config.save();
 
         TimeLoop.loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
             String playerName = playerData.getName();
             Player player = TimeLoop.server.getPlayerList().getPlayerByName(playerName);
 

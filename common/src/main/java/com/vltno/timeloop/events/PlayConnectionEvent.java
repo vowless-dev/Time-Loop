@@ -12,15 +12,17 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 
-import java.util.Arrays;
-
 public class PlayConnectionEvent {
     public static void onJoin(ServerGamePacketListenerImpl handler, MinecraftServer server) {
         ServerPlayer player = handler.player;
         String playerName = player.getName().getString();
         HolderLookup.Provider provider = server.registryAccess();
 
-        TimeLoop.loopSceneManager.addPlayer(Arrays.asList(playerName, null, null, player.position().toString(), new CompoundTag().toString()));
+        try {
+            TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(true);
+        } catch (Exception e) {
+            TimeLoop.loopSceneManager.addPlayer(playerName, player.position());
+        }
 
         CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
         TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setInventoryTag(invTag);
@@ -66,7 +68,6 @@ public class PlayConnectionEvent {
             TimeLoop.executeCommand(String.format("mocap recording start %s", playerName));
 
             if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
-
                 boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
                 TimeLoop.loopBossBar.visible(shouldBeVisible);
             }
@@ -77,7 +78,7 @@ public class PlayConnectionEvent {
         ServerPlayer player = handler.player;
         String playerName = player.getName().getString();
 
-        TimeLoop.loopSceneManager.removePlayer(playerName);
+        TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(false);
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.removePlayer(player);
         }
