@@ -4,16 +4,15 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import com.vltno.timeloop.LoopCommands;
-import com.vltno.timeloop.LoopTypes;
-import com.vltno.timeloop.RewindTypes;
-import com.vltno.timeloop.TimeLoop;
+import com.vltno.timeloop.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.function.Consumer;
 
@@ -148,14 +147,35 @@ public class SettingsCommands {
         CommandSourceStack source = context.getSource();
         String targetPlayer = StringArgumentType.getString(context, "targetPlayer");
         String newName = StringArgumentType.getString(context, "newName").replace(" ", "").toLowerCase();
-        String newSkin = StringArgumentType.getString(context, "newSkin").replace(" ", "").toLowerCase(); //TODO! - add url support for skins
 
-        TimeLoop.modifyPlayerAttributes(targetPlayer, newName, newSkin);
+        Skin finalSkin = new Skin();
+        String rawSkinValue = StringArgumentType.getString(context, "newSkin").replace(" ", "").toLowerCase();
+        finalSkin.value = rawSkinValue;
+
+        try {
+            String testUrl = rawSkinValue.contains("https://") ? rawSkinValue.replace("minesk.in", "mineskin.org/skins") : "https://" + rawSkinValue.replace("minesk.in", "mineskin.org/skins");
+
+            URI uri = new URI(testUrl);
+            String host = uri.getHost();
+
+            if (host.equals("mineskin.org")) {
+                finalSkin.value = testUrl.replaceFirst("^[a-zA-Z]+://", "");
+
+                finalSkin.skinType = SkinTypes.MINESKIN;
+
+                LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected MineSkin URL {}", finalSkin.value);
+            } else {
+                LoopCommands.LOOP_COMMANDS_LOGGER.info("Not a valid MineSkin URL {}", testUrl);
+            }
+        } catch (URISyntaxException | NullPointerException e) {
+            LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin input is not a URL, treating as username: {}", rawSkinValue);
+        }
+
+        TimeLoop.modifyPlayerAttributes(targetPlayer, newName, finalSkin);
         source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, newSkin);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, finalSkin.value);
         return 1;
     }
-
 
     private static int setRewindType(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();

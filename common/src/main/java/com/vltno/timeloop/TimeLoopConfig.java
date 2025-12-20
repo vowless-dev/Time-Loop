@@ -60,7 +60,7 @@ public class TimeLoopConfig {
 
         if (config == null) {
             config = new TimeLoopConfig();
-            System.err.println("Config file not found or invalid. Generating a default configuration.");
+            System.err.println("Config file not found or invalid. Using default config.");
         }
 
         // Validate recordingPlayers field and provide defaults if necessary

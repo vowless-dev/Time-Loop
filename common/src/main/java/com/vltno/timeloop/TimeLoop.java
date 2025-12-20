@@ -153,7 +153,7 @@ public class TimeLoop {
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			String playerName = playerData.getName();
 			String playerNickname = playerData.getNickname();
-			String playerSkin = playerData.getSkin();
+			Skin playerSkin = playerData.getSkin();
 			Vec3 startPosition = playerData.getStartPosition();
 			Vec3 joinPosition = playerData.getJoinPosition();
 			CompoundTag inventoryTag = playerData.getInventoryTag();
@@ -216,7 +216,14 @@ public class TimeLoop {
             playerData.setLastDimensionKey(player.level().dimension());
 
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-			executeCommand(String.format("mocap playback start .%s '%s' skin_from_player '%s'", playerSceneName, playerNickname, playerSkin));
+
+            String skin_from = "skin_from_player";
+
+            switch (playerSkin.skinType) {
+                case MINESKIN -> skin_from = "skin_from_mineskin";
+            }
+
+			executeCommand(String.format("mocap playback start .%s '%s' %s '%s'", playerSceneName, playerNickname, skin_from, playerSkin.value));
 		});
 
 		loopIteration++;
@@ -314,6 +321,7 @@ public class TimeLoop {
                 LOOP_LOGGER.info("Ticks left: " + ticksLeft);
                 LOOP_LOGGER.info("i: " + i);
                 LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
+                // FIXME!!: USE FULL SUBSCENE NAME (INDEX DOESNT WORK)
                 executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, playerData.getActiveRecordingIndex(), playerData.getTempOffset(i - 1)));
             }
         });
@@ -343,12 +351,12 @@ public class TimeLoop {
         stopLoop(false);
     }
 
-	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, String newSkin) {
+	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
         PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
 
         targetPlayer.setNickname(newPlayerNickname);
         targetPlayer.setSkin(newSkin);
-        LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin);
+        LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin.value);
 	}
 
 	/**

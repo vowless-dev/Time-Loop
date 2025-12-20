@@ -12,7 +12,7 @@ import java.util.ArrayList;
 public class PlayerData {
     private final String name;
     private String nickname;
-    private String skin;
+    private Skin skin;
     private Vec3 startPosition;
     private Vec3 joinPosition;
     private String inventoryTag;
@@ -24,7 +24,7 @@ public class PlayerData {
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
         this.nickname = nickname;
-        this.skin = skin;
+        this.skin = new Skin();
         this.startPosition = null;
         this.joinPosition = joinPosition;
         this.setInventoryTag(inventoryTag);
@@ -47,11 +47,11 @@ public class PlayerData {
         this.nickname = nickname;
     }
 
-    public String getSkin() {
+    public Skin getSkin() {
         return skin;
     }
 
-    public void setSkin(String skin) {
+    public void setSkin(Skin skin) {
         this.skin = skin;
     }
 
