@@ -106,16 +106,13 @@ public class TimeLoop {
 
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
 
-        if (playerData == null) {
-            LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
-            return;
-        }
+        if (!playerData.getActive()) return; // shouldn't be possible but just in case
 
         ResourceKey<Level> currentDimension = player.level().dimension();
         ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
 
         // Check if dimension has actually changed since the last update
-        if (currentDimension.equals(lastDimension) && lastDimension != null) {
+        if (currentDimension.equals(lastDimension)) {
             return;
         }
 
@@ -151,6 +148,8 @@ public class TimeLoop {
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
 			String playerName = playerData.getName();
 			String playerNickname = playerData.getNickname();
 			Skin playerSkin = playerData.getSkin();
@@ -223,7 +222,7 @@ public class TimeLoop {
                 case MINESKIN -> skin_from = "skin_from_mineskin";
             }
 
-			executeCommand(String.format("mocap playback start .%s '%s' %s '%s'", playerSceneName, playerNickname, skin_from, playerSkin.value));
+			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
 		});
 
 		loopIteration++;
@@ -245,6 +244,8 @@ public class TimeLoop {
 		}
 		
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
 			String playerName = playerData.getName();
 			Player player = server.getPlayerList().getPlayerByName(playerName);
 
@@ -271,6 +272,8 @@ public class TimeLoop {
 	public static void startRecordings() {
 		// Start recording for every player
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
 			String playerName = playerData.getName();
             playerData.resetActiveRecordingIndex();
             playerData.resetTempOffsets();
@@ -284,6 +287,8 @@ public class TimeLoop {
 	public static void saveRecordings() {
         // Stop and save recordings for each player
         loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
             String playerName = playerData.getName();
             String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 

@@ -20,11 +20,13 @@ public class PlayerData {
     private int activeRecordingIndex;
     private int activeSubsceneIndex;
     private ArrayList<Float> tempOffsets;
-    
+    private boolean active;
+
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
         this.nickname = nickname;
         this.skin = new Skin();
+        this.skin.value = name;
         this.startPosition = null;
         this.joinPosition = joinPosition;
         this.setInventoryTag(inventoryTag);
@@ -33,6 +35,7 @@ public class PlayerData {
         this.activeSubsceneIndex = 0;
         this.tempOffsets = new ArrayList<Float>();
         this.tempOffsets.add(0f);
+        this.active = true;
     }
 
     public String getName() {
@@ -133,10 +136,17 @@ public class PlayerData {
 
     public void resetTempOffsets() {
         this.tempOffsets.clear();
-        this.tempOffsets.add(0f);
     }
 
     public ArrayList<Float> getTempOffsets() {
         return tempOffsets;
+    }
+
+    public boolean getActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }

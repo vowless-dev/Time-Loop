@@ -153,12 +153,12 @@ public class SettingsCommands {
         finalSkin.value = rawSkinValue;
 
         try {
-            String testUrl = rawSkinValue.contains("https://") ? rawSkinValue.replace("minesk.in", "mineskin.org/skins") : "https://" + rawSkinValue.replace("minesk.in", "mineskin.org/skins");
+            String testUrl = rawSkinValue.contains("https://") ? rawSkinValue : "https://" + rawSkinValue;
 
             URI uri = new URI(testUrl);
             String host = uri.getHost();
 
-            if (host.equals("mineskin.org")) {
+            if (host.equals("mineskin.org") || host.equals("minesk.in")) {
                 finalSkin.value = testUrl.replaceFirst("^[a-zA-Z]+://", "");
 
                 finalSkin.skinType = SkinTypes.MINESKIN;
