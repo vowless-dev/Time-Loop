@@ -207,7 +207,7 @@ public class TimeLoop {
                         z = joinPosition.z;
                     }
                     case SPAWN_POSITION -> {
-                        BlockPos spawnPosition = server.overworld().getRespawnData().pos();
+                        BlockPos spawnPosition = server.overworld().getSharedSpawnPos();
                         if (spawnPosition == null) {
                             LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
                             return;

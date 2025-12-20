@@ -43,7 +43,7 @@ public class LoopSceneManager {
         String skin = (tempSkin == null || tempSkin.isEmpty()) ? playerName : tempSkin;
         CompoundTag inventoryTag;
         try {
-            Tag tag = TagParser.parseCompoundFully(tempInventoryTag);
+            Tag tag = TagParser.parseTag(tempInventoryTag);
             if (tag instanceof CompoundTag compoundTag) {
                 inventoryTag = compoundTag;
             } else {
