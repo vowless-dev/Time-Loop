@@ -12,6 +12,9 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 public class PlayConnectionEvent {
     public static void onJoin(ServerGamePacketListenerImpl handler, MinecraftServer server) {
         ServerPlayer player = handler.player;
