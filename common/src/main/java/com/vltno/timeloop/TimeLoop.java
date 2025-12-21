@@ -4,17 +4,22 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.serialization.DynamicOps;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.RelativeMovement;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -25,10 +30,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public class TimeLoop {
 	public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
@@ -102,24 +104,18 @@ public class TimeLoop {
     public static void handlePlayerDimensionChange(ServerPlayer player) {
         if (!isLooping) return;
 
-        // Log message for debugging dimension change
-        LOOP_LOGGER.info("Player {} changed dimension to {}.",
-                player.getName().getString(), player.level().dimension().location().toString());
-
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
 
-        if (playerData == null) {
-            LOOP_LOGGER.warn("Player {} changed dimensions but is not tracked for the loop.", player.getName().getString());
-            return;
-        }
+        if (!playerData.getActive()) return; // shouldn't be possible but just in case
 
         ResourceKey<Level> currentDimension = player.level().dimension();
         ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
 
         // Check if dimension has actually changed since the last update
-        if (currentDimension.equals(lastDimension) && lastDimension != null) {
+        if (currentDimension.equals(lastDimension)) {
             return;
         }
+
 
         // Manually stop the old recording and make a new one
         String playerName = playerData.getName();
@@ -128,17 +124,20 @@ public class TimeLoop {
 
         playerData.incrementActiveRecordingIndex();
 
-        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}.",
-                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex());
+        playerData.addTempOffset(0);
+        playerData.addTempOffset(convertTicksToSeconds(tickCounter));
+
+        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}. Temp offsets are {}",
+                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
 
         // Update the player's state
         playerData.setLastDimensionKey(currentDimension);
     }
 
-    /**
-     * Runs the next iteration of the loop.
-     */
-    public static void runLoopIteration() {
+	/**
+	 * Runs the next iteration of the loop.
+	 */
+	public static void runLoopIteration() {
         if (!isLooping) {
             LOOP_LOGGER.warn("Tried to iterate but not looping!");
             return;
@@ -147,38 +146,41 @@ public class TimeLoop {
             stopLoop();
             return;
         }
-        LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
-        saveRecordings();
-        removeOldSceneEntries();
-        executeCommand("mocap playback stop_all including_others");
-        startRecordings();
-        if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
+		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
+		saveRecordings();
+		removeOldSceneEntries();
+		executeCommand("mocap playback stop_all including_others");
+		startRecordings();
+		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
-        loopSceneManager.forEachRecordingPlayer(playerData -> {
-            String playerName = playerData.getName();
-            String playerNickname = playerData.getNickname();
-            String playerSkin = playerData.getSkin();
-            Vec3 startPosition = playerData.getStartPosition();
-            Vec3 joinPosition = playerData.getJoinPosition();
-            CompoundTag inventoryTag = playerData.getInventoryTag();
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
 
-            Player player = server.getPlayerList().getPlayerByName(playerName);
+			String playerName = playerData.getName();
+			String playerNickname = playerData.getNickname();
+			Skin playerSkin = playerData.getSkin();
+			Vec3 startPosition = playerData.getStartPosition();
+			Vec3 joinPosition = playerData.getJoinPosition();
+			CompoundTag inventoryTag = playerData.getInventoryTag();
+
+			Player player = server.getPlayerList().getPlayerByName(playerName);
             if (player == null) {
                 LOOP_LOGGER.warn("Player {} is offline, skipping rewind.", playerName);
                 return;
             }
 
-            HolderLookup.Provider provider = server.registryAccess();
+			HolderLookup.Provider provider = server.registryAccess();
 
-            if (trackInventory) {
-                loadFullInventory(player, inventoryTag, provider);
-            }
+			if (trackInventory) {
+				loadFullInventory(player, inventoryTag, provider);
+			}
 
             if (!rewindType.equals(RewindTypes.NONE)) {
                 ServerLevel targetLevel = (ServerLevel) player.level();
-                Set<RelativeMovement> absoluteMovement = Collections.emptySet();
+                Set<Relative> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
+                boolean setCamera = false;
 
                 double x = 0.0, y = 0.0, z = 0.0;
                 switch (rewindType) {
@@ -214,19 +216,26 @@ public class TimeLoop {
                         z = spawnPosition.getZ();
                     }
                 }
-                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch);
+                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch, setCamera);
             }
             playerData.setLastDimensionKey(player.level().dimension());
 
-            String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-            executeCommand(String.format("mocap playback start .%s %s skin_from_player %s", playerSceneName, playerNickname, playerSkin));
-        });
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-        loopIteration++;
-        config.loopIteration = loopIteration;
-        config.save();
-        LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
-    }
+            String skin_from = "skin_from_player";
+
+            switch (playerSkin.skinType) {
+                case MINESKIN -> skin_from = "skin_from_mineskin";
+            }
+
+			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
+		});
+
+		loopIteration++;
+		config.loopIteration = loopIteration;
+		config.save();
+		LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
+	}
 
 	/**
 	 * Starts and initialises the loop.
@@ -241,6 +250,8 @@ public class TimeLoop {
 		}
 
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
 			String playerName = playerData.getName();
 			Player player = server.getPlayerList().getPlayerByName(playerName);
 
@@ -267,18 +278,23 @@ public class TimeLoop {
 	public static void startRecordings() {
 		// Start recording for every player
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
 			String playerName = playerData.getName();
             playerData.resetActiveRecordingIndex();
+            playerData.resetTempOffsets();
 			executeCommand(String.format("mocap recording start %s", playerName));
 		});
 	}
 
-    /**
-     * Saves the recordings.
-     */
-    public static void saveRecordings() {
+	/**
+	 * Saves the recordings.
+	 */
+	public static void saveRecordings() {
         // Stop and save recordings for each player
         loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
             String playerName = playerData.getName();
             String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
@@ -308,11 +324,19 @@ public class TimeLoop {
                 // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
                 executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
 
-                // Add the segment to the scene.
                 executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
+
+                playerData.incrementActiveSubsceneIndex();
+
+                LOOP_LOGGER.info("Tick counter: " + tickCounter);
+                LOOP_LOGGER.info("Ticks left: " + ticksLeft);
+                LOOP_LOGGER.info("i: " + i);
+                LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
+                // FIXME!!: USE FULL SUBSCENE NAME (INDEX DOESNT WORK)
+                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, playerData.getActiveRecordingIndex(), playerData.getTempOffset(i - 1)));
             }
         });
-    }
+	}
 
 	/**
 	 * Stops the loop.
@@ -338,17 +362,12 @@ public class TimeLoop {
         stopLoop(false);
     }
 
-	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, String newSkin) {
-		String playerSceneName = loopSceneManager.getPlayerSceneName(targetPlayerName);
-		executeCommand(String.format("mocap scenes modify .%s %s player_skin skin_from_player %s", playerSceneName, newPlayerNickname, newSkin));
+	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
+        PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
 
-		loopSceneManager.forEachRecordingPlayer(playerData -> {
-			if (playerData.getName().equals(targetPlayerName)) {
-				playerData.setNickname(newPlayerNickname);
-				playerData.setSkin(newSkin);
-				LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin);
-			}
-		});
+        targetPlayer.setNickname(newPlayerNickname);
+        targetPlayer.setSkin(newSkin);
+        LOOP_LOGGER.info("Modified loop attributes for player '{}' -> '{}' with skin '{}'", targetPlayerName, newPlayerNickname, newSkin.value);
 	}
 
 	/**
@@ -428,16 +447,18 @@ public class TimeLoop {
 
 	/**
 	 * Converts time in ticks to HH:MM:SS
-	 *
-	 * @param ticksLeft A int value.
 	 */
-	public static String convertTicksToTime(int ticksLeft) {
-		int timeLeft = ticksLeft / 20;
-		int hours = timeLeft / 3600;
-		int minutes = (timeLeft % 3600) / 60;
-		int seconds = timeLeft % 60;
+	public static String convertTicksToTime(int ticks) {
+		int time = ticks / 20;
+		int hours = time / 3600;
+		int minutes = (time % 3600) / 60;
+		int seconds = time % 60;
 		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
 	}
+
+    public static float convertTicksToSeconds(int ticks) {
+        return ticks / 20f;
+    }
 
 	public static CompoundTag saveFullInventory(Player player, HolderLookup.Provider provider) {
 		CompoundTag tag = new CompoundTag();

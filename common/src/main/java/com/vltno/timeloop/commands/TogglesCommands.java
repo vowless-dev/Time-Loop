@@ -14,6 +14,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 public class TogglesCommands {
@@ -21,30 +22,33 @@ public class TogglesCommands {
     {
         LiteralArgumentBuilder<CommandSourceStack> togglesNode = Commands.literal("toggles");
 
-        togglesNode.then(toggleCommand(TimeLoop.trackTimeOfDay, "trackTimeOfDay", TogglesCommands::trackTimeOfDay));
+        togglesNode.then(toggleCommand(() -> TimeLoop.trackTimeOfDay, "trackTimeOfDay", TogglesCommands::trackTimeOfDay));
 
-        togglesNode.then(toggleCommand(TimeLoop.trackItems, "trackItems", TogglesCommands::trackItems));
+        togglesNode.then(toggleCommand(() -> TimeLoop.trackItems, "trackItems", TogglesCommands::trackItems));
 
-        togglesNode.then(toggleCommand(TimeLoop.trackInventory, "trackInventory", TogglesCommands::trackInventory));
+        togglesNode.then(toggleCommand(() -> TimeLoop.trackInventory, "trackInventory", TogglesCommands::trackInventory));
 
-        togglesNode.then(toggleCommand(TimeLoop.displayTimeInTicks, "displayTimeInTicks", TogglesCommands::displayTimeInTicks));
+        togglesNode.then(toggleCommand(() -> TimeLoop.displayTimeInTicks, "displayTimeInTicks", TogglesCommands::displayTimeInTicks));
 
-        togglesNode.then(toggleCommand(TimeLoop.showLoopInfo, "showLoopInfo", TogglesCommands::showLoopInfo));
+        togglesNode.then(toggleCommand(() -> TimeLoop.showLoopInfo, "showLoopInfo", TogglesCommands::showLoopInfo));
 
-        togglesNode.then(toggleCommand(TimeLoop.trackChat, "trackChat", TogglesCommands::trackChat));
+        togglesNode.then(toggleCommand(() -> TimeLoop.trackChat, "trackChat", TogglesCommands::trackChat));
 
-        togglesNode.then(toggleCommand(TimeLoop.hurtLoopedPlayers, "hurtLoopedPlayers", TogglesCommands::hurtLoopedPlayers));
+        togglesNode.then(toggleCommand(() -> TimeLoop.hurtLoopedPlayers, "hurtLoopedPlayers", TogglesCommands::hurtLoopedPlayers));
 
         settingsCommandBuilder.then(togglesNode);
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> toggleCommand(boolean bool, String name, Command command) {
+    @SuppressWarnings("unchecked")
+    private static LiteralArgumentBuilder<CommandSourceStack> toggleCommand(Supplier<Boolean> getter, String name, Command command) {
         String spacedName = Pattern.compile("(?<=[a-z])(?=[A-Z])").matcher(name).replaceAll(" ").toLowerCase();
         String finalName = spacedName.substring(0,1).toUpperCase() + spacedName.substring(1).toLowerCase();
 
-        return (LiteralArgumentBuilder<CommandSourceStack>) Commands.literal(name)
+        LiteralArgumentBuilder<CommandSourceStack> builder = Commands.literal(name);
+
+        return LiteralArgumentBuilder.<CommandSourceStack>literal(name)
                 .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal(finalName + " is set to: " + bool), false);
+                    context.getSource().sendSuccess(() -> Component.literal(finalName + " is set to: " + getter.get()), false);
                     return 1;
                 })
                 .then(Commands.argument("value", BoolArgumentType.bool())
@@ -85,6 +89,8 @@ public class TogglesCommands {
         TimeLoop.config.save();
 
         TimeLoop.loopSceneManager.forEachRecordingPlayer(playerData -> {
+            if (!playerData.getActive()) return;
+
             String playerName = playerData.getName();
             Player player = TimeLoop.server.getPlayerList().getPlayerByName(playerName);
 
