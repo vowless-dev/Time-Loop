@@ -1,7 +1,7 @@
 /gradlew        text eol=lf
 *.bat           text eol=crlf
 
-gradle.properties merge=binary
+gradle.properties merge=ours
 fabric/src/main/resources/fabric.mod.json merge=binary
 neoforge/src/main/resources/META-INF/neoforge.mods.toml merge=binary
 common/src/main/java/com/vltno/timeloop/* merge=binary
