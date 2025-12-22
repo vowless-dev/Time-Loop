@@ -2,6 +2,9 @@ package com.vltno.timeloop;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.vltno.timeloop.types.LoopTypes;
+import com.vltno.timeloop.types.MaxLoopsTypes;
+import com.vltno.timeloop.types.RewindTypes;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -17,7 +20,8 @@ public class TimeLoopConfig {
     public int loopIteration = 0;
     public boolean isLooping = false;
     public int loopLengthTicks = 6000; // Default: 6000 ticks (i.e. 5 minutes)
-    public int maxLoops = 0; // No limit by default
+    public int maxLoops = 0;
+    public MaxLoopsTypes maxLoopsType = MaxLoopsTypes.DISABLED;
     public long timeSetting = 13000;
     public long startTimeOfDay = 0;
     public boolean trackTimeOfDay = false;
@@ -53,19 +57,19 @@ public class TimeLoopConfig {
             try (Reader reader = Files.newBufferedReader(configPath)) {
                 config = GSON.fromJson(reader, TimeLoopConfig.class);
             } catch (Exception e) {
-                System.err.println("Failed to load config file: " + e.getMessage());
+                TimeLoop.LOOP_LOGGER.error("Failed to load config file: " + e.getMessage());
                 e.printStackTrace();
             }
         }
 
         if (config == null) {
             config = new TimeLoopConfig();
-            System.err.println("Config file not found or invalid. Using default config.");
+            TimeLoop.LOOP_LOGGER.error("Config file not found or invalid. Using default config.");
         }
 
         // Validate recordingPlayers field and provide defaults if necessary
         if (!(config.recordingPlayers instanceof Map)) {
-            System.err.println("Invalid or missing recordingPlayers data in config. Initializing with an empty map.");
+            TimeLoop.LOOP_LOGGER.error("Invalid or missing recordingPlayers data in config. Initializing with an empty map.");
             config.recordingPlayers = new HashMap<>();
         }
 

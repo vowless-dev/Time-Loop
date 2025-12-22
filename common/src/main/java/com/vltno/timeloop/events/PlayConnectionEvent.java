@@ -1,6 +1,6 @@
 package com.vltno.timeloop.events;
 
-import com.vltno.timeloop.LoopTypes;
+import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.HolderLookup;
