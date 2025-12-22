@@ -1,6 +1,6 @@
 package com.vltno.timeloop.events;
 
-import com.vltno.timeloop.LoopTypes;
+import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;

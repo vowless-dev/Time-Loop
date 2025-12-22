@@ -119,6 +119,10 @@ public class PlayerData {
         this.activeSubsceneIndex++;
     }
 
+    public void setActiveSubsceneIndex(int subsceneIndex) {
+        this.activeSubsceneIndex = subsceneIndex;
+    }
+
     public void resetActiveSubsceneIndex() {
         this.activeSubsceneIndex = 1;
     }
@@ -136,6 +140,7 @@ public class PlayerData {
 
     public void resetTempOffsets() {
         this.tempOffsets.clear();
+        this.tempOffsets.add(0f);
     }
 
     public ArrayList<Float> getTempOffsets() {

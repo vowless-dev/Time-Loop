@@ -1,11 +1,9 @@
 package com.vltno.timeloop.commands;
 
-import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import com.vltno.timeloop.LoopCommands;
-import com.vltno.timeloop.LoopTypes;
+import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
@@ -14,45 +12,26 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
-import java.util.function.Supplier;
-import java.util.regex.Pattern;
-
 public class TogglesCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> settingsCommandBuilder)
     {
         LiteralArgumentBuilder<CommandSourceStack> togglesNode = Commands.literal("toggles");
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.trackTimeOfDay, "trackTimeOfDay", TogglesCommands::trackTimeOfDay));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.trackTimeOfDay, "trackTimeOfDay", TogglesCommands::trackTimeOfDay));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.trackItems, "trackItems", TogglesCommands::trackItems));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.trackItems, "trackItems", TogglesCommands::trackItems));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.trackInventory, "trackInventory", TogglesCommands::trackInventory));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.trackInventory, "trackInventory", TogglesCommands::trackInventory));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.displayTimeInTicks, "displayTimeInTicks", TogglesCommands::displayTimeInTicks));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.displayTimeInTicks, "displayTimeInTicks", TogglesCommands::displayTimeInTicks));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.showLoopInfo, "showLoopInfo", TogglesCommands::showLoopInfo));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.showLoopInfo, "showLoopInfo", TogglesCommands::showLoopInfo));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.trackChat, "trackChat", TogglesCommands::trackChat));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.trackChat, "trackChat", TogglesCommands::trackChat));
 
-        togglesNode.then(toggleCommand(() -> TimeLoop.hurtLoopedPlayers, "hurtLoopedPlayers", TogglesCommands::hurtLoopedPlayers));
+        togglesNode.then(CommandUtils.toggleCommand(() -> TimeLoop.hurtLoopedPlayers, "hurtLoopedPlayers", TogglesCommands::hurtLoopedPlayers));
 
         settingsCommandBuilder.then(togglesNode);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static LiteralArgumentBuilder<CommandSourceStack> toggleCommand(Supplier<Boolean> getter, String name, Command command) {
-        String spacedName = Pattern.compile("(?<=[a-z])(?=[A-Z])").matcher(name).replaceAll(" ").toLowerCase();
-        String finalName = spacedName.substring(0,1).toUpperCase() + spacedName.substring(1).toLowerCase();
-
-        LiteralArgumentBuilder<CommandSourceStack> builder = Commands.literal(name);
-
-        return LiteralArgumentBuilder.<CommandSourceStack>literal(name)
-                .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal(finalName + " is set to: " + getter.get()), false);
-                    return 1;
-                })
-                .then(Commands.argument("value", BoolArgumentType.bool())
-                        .executes(command));
     }
 
     private static int trackTimeOfDay(CommandContext<CommandSourceStack> context) {

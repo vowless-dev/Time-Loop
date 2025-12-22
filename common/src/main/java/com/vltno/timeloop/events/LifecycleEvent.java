@@ -17,10 +17,12 @@ public class LifecycleEvent {
         TimeLoop.loopSceneManager = new LoopSceneManager(TimeLoop.config);
 
         TimeLoop.loopIteration = TimeLoop.config.loopIteration;
-        TimeLoop.loopLengthTicks = TimeLoop.config.loopLengthTicks;
         TimeLoop.isLooping = TimeLoop.config.isLooping;
-        TimeLoop.startTimeOfDay = TimeLoop.config.startTimeOfDay;
+        TimeLoop.loopLengthTicks = TimeLoop.config.loopLengthTicks;
+        TimeLoop.maxLoops = TimeLoop.config.maxLoops;
+        TimeLoop.maxLoopsType = TimeLoop.config.maxLoopsType;
         TimeLoop.timeSetting = TimeLoop.config.timeSetting;
+        TimeLoop.startTimeOfDay = TimeLoop.config.startTimeOfDay;
         TimeLoop.trackTimeOfDay = TimeLoop.config.trackTimeOfDay;
         TimeLoop.tickCounter = TimeLoop.config.tickCounter;
         TimeLoop.ticksLeft = TimeLoop.config.ticksLeft;
@@ -66,7 +68,7 @@ public class LifecycleEvent {
     public static void onServerStopping()
     {
         if (TimeLoop.isLooping) {
-            TimeLoop.stopLoop(true);
+            TimeLoop.stopLoop();
             TimeLoop.config.isLooping = true;
             TimeLoop.config.tickCounter = TimeLoop.tickCounter;
             TimeLoop.config.ticksLeft = TimeLoop.ticksLeft;

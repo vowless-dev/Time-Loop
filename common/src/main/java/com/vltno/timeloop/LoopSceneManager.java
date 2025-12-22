@@ -1,16 +1,9 @@
 package com.vltno.timeloop;
 
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
-
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class LoopSceneManager {
@@ -57,11 +50,19 @@ public class LoopSceneManager {
         getAllPlayerSceneNames().forEach(action);
     }
 
+    public Collection<PlayerData> getRecordingPlayers() {
+        return recordingPlayers.values();
+    }
+
+    public PlayerData getRecordingPlayer(String playerName) {
+        return getRecordingPlayers().stream().filter(playerData -> playerData.getName().equalsIgnoreCase(playerName)).findFirst().orElse(null);
+    }
+
     // Method to perform an action for each recording player
     public void forEachRecordingPlayer(Consumer<PlayerData> action) {
         recordingPlayers.values().forEach(action);
     }
-    
+
     // Method to set recording players with a new map
     public void setRecordingPlayers(Map<String, PlayerData> recordingPlayers) {
         this.recordingPlayers = recordingPlayers;
@@ -71,7 +72,4 @@ public class LoopSceneManager {
         config.recordingPlayers = new HashMap<>(recordingPlayers);
     }
 
-    public PlayerData getRecordingPlayer(String playerName) {
-        return recordingPlayers.get(playerName);
-    }
 }

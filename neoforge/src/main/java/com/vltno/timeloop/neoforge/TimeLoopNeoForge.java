@@ -1,6 +1,6 @@
 package com.vltno.timeloop.neoforge;
 
-import com.vltno.timeloop.LoopCommands;
+import com.vltno.timeloop.commands.LoopCommands;
 import com.vltno.timeloop.TimeLoop;
 import com.vltno.timeloop.neoforge.events.*;
 import net.minecraft.server.MinecraftServer;
@@ -9,7 +9,6 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
