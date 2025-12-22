@@ -1,9 +1,7 @@
-package com.vltno.timeloop;
+package com.vltno.timeloop.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.vltno.timeloop.commands.BaseCommands;
-import com.vltno.timeloop.commands.SettingsCommands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import org.slf4j.Logger;
@@ -18,7 +16,6 @@ public class LoopCommands {
 
         BaseCommands.register(commandBuilder);
         SettingsCommands.register(commandBuilder);
-        // TogglesCommands.register is called within SettingsCommands.register
 
         dispatcher.register(commandBuilder);
     }

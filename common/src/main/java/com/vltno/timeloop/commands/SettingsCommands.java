@@ -5,15 +5,17 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.vltno.timeloop.*;
+import com.vltno.timeloop.types.LoopTypes;
+import com.vltno.timeloop.types.MaxLoopsTypes;
+import com.vltno.timeloop.types.RewindTypes;
+import com.vltno.timeloop.types.SkinTypes;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Arrays;
 import java.util.function.Consumer;
 
 public class SettingsCommands {
@@ -21,7 +23,7 @@ public class SettingsCommands {
         LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings")
                 .requires(source -> source.hasPermission(2));
 
-        var setLoopTypeNode = Commands.literal("setLoopType")
+        var loopTypeNode = Commands.literal("loopType")
                 .executes(context -> {
                     context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
                     return 1;
@@ -32,9 +34,9 @@ public class SettingsCommands {
 
             switch (loopType) {
                 case TICKS -> {
-                    setLoopTypeNode.then(Commands.literal(commandName)
+                    loopTypeNode.then(Commands.literal(commandName)
                         .then(Commands.argument(commandName, IntegerArgumentType.integer(20))
-                                .executes(context -> setLoopType(context, loopType, commandName, (newTicks) -> {
+                                .executes(context -> loopType(context, loopType, commandName, (newTicks) -> {
                                     TimeLoop.loopLengthTicks = newTicks;
                                     TimeLoop.config.loopLengthTicks = newTicks;
 
@@ -45,45 +47,58 @@ public class SettingsCommands {
 
                 case TIME_OF_DAY -> {
                     String argumentName = commandName.split("_")[0];
-                    setLoopTypeNode.then(Commands.literal(commandName)
+                    loopTypeNode.then(Commands.literal(commandName)
                         .then(Commands.argument(argumentName, IntegerArgumentType.integer(0, 24000))
-                                .executes(context -> setLoopType(context, loopType, argumentName, (newTime) -> {
+                                .executes(context -> loopType(context, loopType, argumentName, (newTime) -> {
                                     TimeLoop.timeSetting = newTime;
                                     TimeLoop.config.timeSetting = newTime;
                                 }))));
                 }
 
                 default -> {
-                    setLoopTypeNode.then(Commands.literal(commandName)
-                                .executes(context -> setLoopType(context, loopType, null, null)));
+                    loopTypeNode.then(Commands.literal(commandName)
+                                .executes(context -> loopType(context, loopType, null, null)));
                 }
             }
         }
 
-        settingsNode.then(setLoopTypeNode);
+        settingsNode.then(loopTypeNode);
 
-        settingsNode.then(Commands.literal("maxLoops")
+        var maxLoopsNode = Commands.literal("maxLoops")
                 .executes(context -> {
-                    context.getSource().sendSuccess(() -> Component.literal("Max loops is set to: " + TimeLoop.config.maxLoops), false);
+                    String message = "Max loops is set to: " + ((TimeLoop.maxLoops == 0) ? TimeLoop.maxLoopsType.getSerializedName() : TimeLoop.maxLoops + " [" + TimeLoop.maxLoopsType.getSerializedName() + "]");
+                    context.getSource().sendSuccess(() -> Component.literal(message), false);
                     return 1;
-                })
-                .then(Commands.argument("value", IntegerArgumentType.integer(0))
-                        .executes(SettingsCommands::maxLoops)));
+                });
+
+        for (MaxLoopsTypes maxLoopsType : MaxLoopsTypes.values()) {
+            String commandName = maxLoopsType.getCommandName();
+
+            switch (maxLoopsType) {
+                case DISABLED -> maxLoopsNode.then(Commands.literal(commandName).executes(context -> maxLoops(context, maxLoopsType)));
+                default -> maxLoopsNode.then(Commands.literal(commandName)
+                        .then(Commands.argument("value", IntegerArgumentType.integer(1))
+                            .executes(context -> maxLoops(context, maxLoopsType))));
+            }
+        }
+
+        settingsNode.then(maxLoopsNode);
 
         settingsNode.then(Commands.literal("modifyPlayer")
                 .then(Commands.argument("targetPlayer", StringArgumentType.string())
+                        .suggests(((context, builder) -> CommandUtils.PlayerSuggestion(builder)))
                 .then(Commands.argument("newName", StringArgumentType.string())
                 .then(Commands.argument("newSkin", StringArgumentType.string())
                         .executes(SettingsCommands::modifyPlayer)))));
         
-        settingsNode.then(Commands.literal("setRewindType")
+        settingsNode.then(Commands.literal("rewindType")
                 .executes(context -> {
                     context.getSource().sendSuccess(() -> Component.literal("Rewind type is set to: " + TimeLoop.rewindType), false);
                     return 1;
                 })
                 .then(Commands.argument("rewindType", StringArgumentType.word())
-                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(RewindTypes.values()).map(RewindTypes::getCommandName), builder))
-                        .executes(SettingsCommands::setRewindType)));
+                        .suggests((context, builder) -> CommandUtils.EnumSuggestion(builder, RewindTypes.class))
+                        .executes(SettingsCommands::rewindType)));
         
         TogglesCommands.register(settingsNode);
 
@@ -105,7 +120,7 @@ public class SettingsCommands {
         return text;
     }
 
-    private static int setLoopType(CommandContext<CommandSourceStack> context, LoopTypes loopType, @Nullable String argumentName, @Nullable Consumer<Integer> setter) {
+    private static int loopType(CommandContext<CommandSourceStack> context, LoopTypes loopType, @Nullable String argumentName, @Nullable Consumer<Integer> setter) {
         TimeLoop.loopType = loopType;
         TimeLoop.config.loopType = loopType;
 
@@ -128,17 +143,26 @@ public class SettingsCommands {
         return 1;
     }
 
-    private static int maxLoops(CommandContext<CommandSourceStack> context) {
+    private static int maxLoops(CommandContext<CommandSourceStack> context, MaxLoopsTypes maxLoopsType) {
         CommandSourceStack source = context.getSource();
-        int maxLoops = IntegerArgumentType.getInteger(context, "value");
+        if (maxLoopsType == MaxLoopsTypes.DISABLED) {
+            TimeLoop.maxLoops = 0;
+            TimeLoop.config.maxLoops = 0;
+        } else {
+            int maxLoops = IntegerArgumentType.getInteger(context, "value");
 
-        TimeLoop.maxLoops = maxLoops;
-        TimeLoop.config.maxLoops = maxLoops;
+            TimeLoop.maxLoops = maxLoops;
+            TimeLoop.config.maxLoops = maxLoops;
+        }
+
+        TimeLoop.maxLoopsType = maxLoopsType;
+        TimeLoop.config.maxLoopsType = maxLoopsType;
 
         TimeLoop.config.save();
 
-        source.sendSuccess(() -> Component.literal("Max loops is set to: " + maxLoops), true);
-        LoopCommands.LOOP_COMMANDS_LOGGER.info("Max loops set to {}", maxLoops);
+        String message = "Max loops is set to: " + ((TimeLoop.maxLoops == 0) ? TimeLoop.maxLoopsType.getSerializedName() : TimeLoop.maxLoops + " [" + TimeLoop.maxLoopsType.getSerializedName() + "]");
+        source.sendSuccess(() -> Component.literal(message), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info(message);
         return 1;
     }
 
@@ -177,7 +201,7 @@ public class SettingsCommands {
         return 1;
     }
 
-    private static int setRewindType(CommandContext<CommandSourceStack> context) {
+    private static int rewindType(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         String rewindTypeStr = StringArgumentType.getString(context, "rewindType");
         try {

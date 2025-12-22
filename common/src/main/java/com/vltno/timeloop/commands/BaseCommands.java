@@ -6,13 +6,8 @@ import com.vltno.timeloop.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
-import org.jetbrains.annotations.NotNull;
 
-import java.lang.reflect.Field;
-import java.sql.Time;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 import static net.minecraft.network.chat.ComponentUtils.formatList;
 
@@ -85,59 +80,10 @@ public class BaseCommands {
         return 0;
     }
 
-    private static List<String> getTrackedItemsFromReflection() {
-        List<String> trackedItems = new ArrayList<>();
-
-        Class<?> timeLoopClass = TimeLoop.class;
-
-        for (Field field : timeLoopClass.getDeclaredFields()) {
-            if (field.getName().startsWith("track") && field.getType() == boolean.class) {
-                try {
-                    // In case fields aren't public
-                    field.setAccessible(true);
-
-                    if (field.getBoolean(null)) {
-                        String rawName = field.getName();
-
-                        // Convert "trackItems" to "Items"
-                        String baseName = rawName.substring("track".length());
-
-                        // Convert camelCase ("Items") to space-separated ("Items") and then lowercase ("items")
-                        String readableName = Pattern.compile("(?<=[a-z])(?=[A-Z])").matcher(baseName).replaceAll(" ").toLowerCase();
-                        trackedItems.add(readableName);
-                    }
-                } catch (IllegalAccessException e) {
-                    LoopCommands.LOOP_COMMANDS_LOGGER.error("Failed to access reflection field: " + field.getName(), e);
-                }
-            }
-        }
-        return trackedItems;
-    }
-
-    private static @NotNull String formatList(List<String> items) {
-        if (items.size() == 0) return "";
-        if (items.size() == 1) return items.get(0);
-        if (items.size() == 2) return items.get(0) + " and " + items.get(1);
-
-        // For three or more items: use commas, and "and" for the last item
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < items.size(); i++) {
-            if (i > 0) {
-                if (i == items.size() - 1) {
-                    sb.append(", and ");
-                } else {
-                    sb.append(", ");
-                }
-            }
-            sb.append(items.get(i));
-        }
-        return sb.toString();
-    }
-
     private static int status(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
 
-        List<String> trackedItems = getTrackedItemsFromReflection();
+        List<String> trackedItems = CommandUtils.getTrackedItemsFromReflection();
 
         String tracking;
         int count = trackedItems.size();
@@ -145,22 +91,21 @@ public class BaseCommands {
         if (count == 0) {
             tracking = ""; // Nothing tracked
         } else if (count == 1) {
-            // Only one item is on: "Tracking items."
-            tracking = "Tracking " + trackedItems.get(0) + ".";
+            // Only one thing is being tracked
+            tracking = "Tracking " + trackedItems.get(0) + ".\n";
         } else {
-            // Two or more items are on
-            tracking = "Tracking " + formatList(trackedItems) + ".";
+            // Two or more are being tracked
+            tracking = "Tracking " + CommandUtils.formatList(trackedItems) + ".\n";
         }
 
         String loopTypeName = TimeLoop.loopType.getSerializedName();
 
-        String extras = "Looping on " + loopTypeName + "."
-                + (TimeLoop.isLooping && TimeLoop.loopType == LoopTypes.TICKS ? " Ticks Left: " + TimeLoop.ticksLeft : "")
-                + (tracking.isEmpty() ? "" : " " + tracking);
+        String extras = "Looping on " + loopTypeName + ".\n"
+                + ("Max loops is set to: " + ((TimeLoop.maxLoops == 0) ? TimeLoop.maxLoopsType.getSerializedName() + "\n" : TimeLoop.maxLoops + " [" + TimeLoop.maxLoopsType.getSerializedName() + "].\n"))
+                + (tracking.isEmpty() ? "" : tracking);
 
-        String status = TimeLoop.isLooping ?
-                "Loop is running. Iteration: " + TimeLoop.loopIteration + ". " + extras :
-                "Loop is not running. Iteration: " + TimeLoop.loopIteration + ". " + extras;
+        String status = (TimeLoop.isLooping ?
+                "Loop is running.\n" : "Loop is not running.\n") + "Iteration: " + TimeLoop.loopIteration + ".\n" + extras;
 
         source.sendSuccess(() -> Component.literal(status), false);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Status requested: {}", status);
@@ -170,27 +115,6 @@ public class BaseCommands {
     private static int reset(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         TimeLoop.stopLoop();
-
-        // Reset logic
-        TimeLoopConfig baseConfig = new TimeLoopConfig();
-        
-        TimeLoop.startTimeOfDay = baseConfig.startTimeOfDay;
-        TimeLoop.config.startTimeOfDay = baseConfig.startTimeOfDay;
-
-        TimeLoop.timeSetting = baseConfig.timeSetting;
-        TimeLoop.config.timeSetting = baseConfig.timeSetting;
-
-        TimeLoop.ticksLeft = TimeLoop.loopLengthTicks;
-        TimeLoop.config.ticksLeft = TimeLoop.config.loopLengthTicks;
-
-        TimeLoop.trackItems = baseConfig.trackItems;
-        TimeLoop.config.trackItems = baseConfig.trackItems;
-
-        TimeLoop.loopType = baseConfig.loopType;
-        TimeLoop.config.loopType = baseConfig.loopType;
-
-        TimeLoop.displayTimeInTicks = baseConfig.displayTimeInTicks;
-        TimeLoop.config.displayTimeInTicks = baseConfig.displayTimeInTicks;
         
         TimeLoop.executeCommand("mocap playback stop_all");
         TimeLoop.loopSceneManager.forEachPlayerSceneName(playerSceneName -> {

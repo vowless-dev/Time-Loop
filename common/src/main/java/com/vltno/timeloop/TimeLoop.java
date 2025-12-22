@@ -1,10 +1,14 @@
 package com.vltno.timeloop;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.DynamicOps;
+import com.vltno.timeloop.types.LoopTypes;
+import com.vltno.timeloop.types.MaxLoopsTypes;
+import com.vltno.timeloop.types.RewindTypes;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -47,6 +51,7 @@ public class TimeLoop {
 	public static boolean trackTimeOfDay;
 	public static boolean isLooping;
 	public static int maxLoops;
+    public static MaxLoopsTypes maxLoopsType;
 	public static int tickCounter; // Tracks elapsed ticks
 	public static int ticksLeft;
 
@@ -106,7 +111,7 @@ public class TimeLoop {
 
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
 
-        if (!playerData.getActive()) return; // shouldn't be possible but just in case
+        if (!playerData.getActive()) return; // Shouldn't be possible but just in case
 
         ResourceKey<Level> currentDimension = player.level().dimension();
         ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
@@ -118,7 +123,6 @@ public class TimeLoop {
 
         playerData.incrementActiveRecordingIndex();
 
-        playerData.addTempOffset(0);
         playerData.addTempOffset(convertTicksToSeconds(tickCounter));
 
         LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}. Temp offsets are {}",
@@ -136,7 +140,7 @@ public class TimeLoop {
             LOOP_LOGGER.warn("Tried to iterate but not looping!");
             return;
         }
-        if (loopIteration + 1 >= maxLoops && maxLoops != 0) {
+        if (loopIteration + 1 >= maxLoops && maxLoops != 0 && maxLoopsType == MaxLoopsTypes.STOP_LOOP) {
             stopLoop();
             return;
         }
@@ -298,7 +302,7 @@ public class TimeLoop {
             // Iterate and save ALL active recording segments based on the index tracked in PlayerData.
             for (int i = 1; i <= totalSegments; i++) {
                 String recordingToProcess = String.format("-+mc.%s.%d", playerName, i);
-                String recordingName = String.format("%s_loop%d_idx%d", playerName, loopIteration, i);
+                String recordingName = String.format("%s_loop%d_idx%d", playerName.toLowerCase(), loopIteration, i);
 
                 LOOP_LOGGER.info("Processing active recording segment {} for player: {}", i, playerName);
 
@@ -326,8 +330,9 @@ public class TimeLoop {
                 LOOP_LOGGER.info("Ticks left: " + ticksLeft);
                 LOOP_LOGGER.info("i: " + i);
                 LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
-                // FIXME!!: USE FULL SUBSCENE NAME (INDEX DOESNT WORK)
-                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, playerData.getActiveRecordingIndex(), playerData.getTempOffset(i - 1)));
+                String subsceneName = String.format("%03d-%s", playerData.getActiveSubsceneIndex(), recordingName);
+                LOOP_LOGGER.info("SUBSCENE NAME: " + subsceneName);
+                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, subsceneName, playerData.getTempOffset(i - 1)));
             }
         });
 	}
@@ -335,15 +340,19 @@ public class TimeLoop {
 	/**
 	 * Stops the loop.
 	 */
-	public static void stopLoop(boolean tempStop) {
+	public static void stopLoop() {
 		if (isLooping) {
 			LOOP_LOGGER.info("Stopping loop");
+
 			isLooping = false;
-            if (!tempStop) {
-                config.isLooping = false;
-                tickCounter = 0;
-                ticksLeft = loopLengthTicks;
-            }
+            config.isLooping = false;
+
+            tickCounter = 0;
+            config.tickCounter = 0;
+
+            ticksLeft = loopLengthTicks;
+            config.ticksLeft = loopLengthTicks;
+
 			loopBossBar.visible(false);
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
@@ -351,10 +360,6 @@ public class TimeLoop {
 			LOOP_LOGGER.info("Loop stopped!");
 		}
 	}
-
-    public static void stopLoop() {
-        stopLoop(false);
-    }
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
         PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
@@ -387,6 +392,16 @@ public class TimeLoop {
 		}
 	}
 
+    public static void removeRecording(String recording) {
+        try {
+            Path recordingPath = worldFolder.resolve("mocap_files").resolve("recordings").resolve(recording + ".mcmocap_rec");
+            Files.delete(recordingPath);
+            LOOP_LOGGER.info("Deleted recording at {}", recordingPath);
+        } catch (IOException e) {
+            LOOP_LOGGER.error("Error deleting recording {}", recording);
+        }
+    }
+
 	/**
 	 * Removes outdated entries from the scene file to ensure the number of subscenes does not exceed the maximum allowed loops.
 	 * The method checks if there are more recorded subscenes in the scene file than the value specified by maxLoops. If so,
@@ -394,14 +409,14 @@ public class TimeLoop {
 	 *
 	 */
 	private static void removeOldSceneEntries() {
-		if (isLooping && maxLoops > 1) {
-			Path sceneDir = worldFolder.resolve("mocap_files").resolve("scenes");
+		if (maxLoops >= 1 && (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST || maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) && (loopIteration + 1) > maxLoops) {
+			Path scenesDir = worldFolder.resolve("mocap_files").resolve("scenes");
 
 			List<Path> sceneFiles = new ArrayList<>();
 			loopSceneManager.forEachRecordingPlayer(playerData -> {
 				String playerSceneName = loopSceneManager.getPlayerSceneName(playerData.getName());
 				if (playerSceneName != null && !playerSceneName.isBlank()) {
-					sceneFiles.add(sceneDir.resolve(playerSceneName + ".mcmocap_scene"));
+					sceneFiles.add(scenesDir.resolve(playerSceneName + ".mcmocap_scene"));
 				} else {
 					LOOP_LOGGER.warn("Invalid playerSceneName encountered: {}", playerSceneName);
 				}
@@ -420,12 +435,28 @@ public class TimeLoop {
 						JsonArray subScenes = jsonObject.getAsJsonArray("subscenes");
 
 						if (subScenes.size() > maxLoops) {
-							int entriesToRemove = subScenes.size() - maxLoops;
+							int entriesToRemove = loopIteration - maxLoops;
 							JsonArray newSubScenes = new JsonArray();
-							for (int i = entriesToRemove; i < subScenes.size(); i++) {
-								newSubScenes.add(subScenes.get(i));
-							}
-							jsonObject.add("subScenes", newSubScenes);
+                            for (int subsceneIndex = subScenes.size() - 1; subsceneIndex >= 0; subsceneIndex--) {
+                                JsonElement subScene = subScenes.get(subsceneIndex);
+                                String subSceneName = subScene.getAsJsonObject().get("name").getAsString();
+                                String[] subSceneNameSplit = subSceneName.split("_");
+
+                                PlayerData playerData = loopSceneManager.getRecordingPlayer(subSceneNameSplit[0]);
+                                if (playerData != null) {
+                                    playerData.setActiveSubsceneIndex(maxLoops);
+
+                                    int _loopIteration = Integer.parseInt(subSceneNameSplit[subSceneNameSplit.length - 2].split("loop")[1]);
+
+                                    if (_loopIteration > entriesToRemove) {
+                                        newSubScenes.add(subScene);
+                                    } else if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE){
+                                        removeRecording(subSceneName);
+                                    }
+                                }
+                            }
+                            jsonObject.remove("subscenes");
+							jsonObject.add("subscenes", newSubScenes);
 							Files.write(sceneFile, jsonObject.toString().getBytes());
 							LOOP_LOGGER.info("Removed old scene entries for file: {}", sceneFile);
 						}

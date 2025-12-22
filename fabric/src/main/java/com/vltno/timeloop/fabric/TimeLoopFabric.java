@@ -1,7 +1,7 @@
 package com.vltno.timeloop.fabric;
 
 import com.vltno.timeloop.*;
-import com.vltno.timeloop.events.PlayerEvent;
+import com.vltno.timeloop.commands.LoopCommands;
 import com.vltno.timeloop.fabric.events.*;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
