@@ -92,10 +92,10 @@ public class BaseCommands {
             tracking = ""; // Nothing tracked
         } else if (count == 1) {
             // Only one thing is being tracked
-            tracking = "Tracking " + trackedItems.get(0) + ".\n";
+            tracking = "Tracking " + trackedItems.get(0) + ".";
         } else {
             // Two or more are being tracked
-            tracking = "Tracking " + CommandUtils.formatList(trackedItems) + ".\n";
+            tracking = "Tracking " + CommandUtils.formatList(trackedItems) + ".";
         }
 
         String loopTypeName = TimeLoop.loopType.getSerializedName();
