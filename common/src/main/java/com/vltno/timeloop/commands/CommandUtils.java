@@ -3,6 +3,7 @@ package com.vltno.timeloop.commands;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.vltno.timeloop.PlayerData;
@@ -14,7 +15,10 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -78,6 +82,22 @@ public class CommandUtils {
 
     public static CompletableFuture<Suggestions> PlayerSuggestion(SuggestionsBuilder builder) {
         return SharedSuggestionProvider.suggest(TimeLoop.loopSceneManager.getRecordingPlayers().stream().filter(PlayerData::getActive).map(PlayerData::getName), builder);
+    }
+
+    public static CompletableFuture<Suggestions> FileSuggestion(SuggestionsBuilder builder, Path path, boolean includeExtension) {
+        try {
+            return SharedSuggestionProvider.suggest(Files.walk(path).toList().stream().filter(p -> p.toFile().isFile()).map(p -> {
+                String filepath = Arrays.stream(p.toString().replace("\\", "/").split(path.toString().replace("\\", "/") + "/")).toList().getLast().replace("\\", "/");
+
+                return (includeExtension) ? filepath : filepath.substring(0, filepath.lastIndexOf("."));
+            }), builder);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static CompletableFuture<Suggestions> SkinSuggestion(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        return FileSuggestion(builder, TimeLoop.worldFolder.resolve("mocap_files").resolve("skins"), false);
     }
 
     @SuppressWarnings("unchecked")
