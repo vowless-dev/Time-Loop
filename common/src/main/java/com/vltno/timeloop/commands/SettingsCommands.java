@@ -14,14 +14,19 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 public class SettingsCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
         LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings")
                 .requires(source -> source.hasPermission(2));
+
+        //region loopType
 
         var loopTypeNode = Commands.literal("loopType")
                 .executes(context -> {
@@ -63,7 +68,9 @@ public class SettingsCommands {
         }
 
         settingsNode.then(loopTypeNode);
+        //endregion
 
+        //region maxLoops
         var maxLoopsNode = Commands.literal("maxLoops")
                 .executes(context -> {
                     String message = "Max loops is set to: " + ((TimeLoop.maxLoops == 0) ? TimeLoop.maxLoopsType.getSerializedName() : TimeLoop.maxLoops + " [" + TimeLoop.maxLoopsType.getSerializedName() + "]");
@@ -83,13 +90,39 @@ public class SettingsCommands {
         }
 
         settingsNode.then(maxLoopsNode);
+        //endregion
 
-        settingsNode.then(Commands.literal("modifyPlayer")
-                .then(Commands.argument("targetPlayer", StringArgumentType.string())
-                        .suggests(((context, builder) -> CommandUtils.PlayerSuggestion(builder)))
-                .then(Commands.argument("newName", StringArgumentType.string())
-                .then(Commands.argument("newSkin", StringArgumentType.string())
-                        .executes(SettingsCommands::modifyPlayer)))));
+        //region modifyPlayer
+        var targetPlayerArg = Commands.argument("targetPlayer", StringArgumentType.string())
+                .suggests((context, builder) -> CommandUtils.PlayerSuggestion(builder));
+
+        var newNameArg = Commands.argument("newName", StringArgumentType.string())
+                .executes(context -> modifyPlayer(context, SkinTypes.NAME));
+
+        for (SkinTypes skinType : SkinTypes.values()) {
+            String commandName = skinType.getCommandName();
+
+            switch (skinType) {
+                default -> {
+                    newNameArg.then(Commands.literal(commandName)
+                            .then(Commands.argument("newSkin", StringArgumentType.string())
+                                    .executes(context -> modifyPlayer(context, skinType))));
+                }
+                case FILE -> {
+                    newNameArg.then(Commands.literal(commandName)
+                            .then(Commands.argument("newSkin", StringArgumentType.greedyString())
+                                    .suggests(CommandUtils::SkinSuggestion)
+                                    .executes(context -> modifyPlayer(context, skinType))));
+                }
+            }
+        }
+
+        var modifyPlayerNode = Commands.literal("modifyPlayer")
+                .then(targetPlayerArg.then(newNameArg));
+
+        settingsNode.then(modifyPlayerNode);
+
+        //endregion
         
         settingsNode.then(Commands.literal("rewindType")
                 .executes(context -> {
@@ -166,14 +199,20 @@ public class SettingsCommands {
         return 1;
     }
 
-    private static int modifyPlayer(CommandContext<CommandSourceStack> context) {
+    private static int modifyPlayer(CommandContext<CommandSourceStack> context, SkinTypes skinType) {
         // TODO! - Add proper error messages!!!
         CommandSourceStack source = context.getSource();
         String targetPlayer = StringArgumentType.getString(context, "targetPlayer");
         String newName = StringArgumentType.getString(context, "newName").replace(" ", "").toLowerCase();
 
         Skin finalSkin = new Skin();
-        String rawSkinValue = StringArgumentType.getString(context, "newSkin").replace(" ", "").toLowerCase();
+        String rawSkinValue;
+        try {
+            rawSkinValue = StringArgumentType.getString(context, "newSkin").replace(" ", "").toLowerCase();
+        } catch (Exception e) {
+            rawSkinValue = newName;
+        }
+
         finalSkin.value = rawSkinValue;
 
         try {
@@ -189,11 +228,31 @@ public class SettingsCommands {
 
                 LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected MineSkin URL {}", finalSkin.value);
             } else {
-                LoopCommands.LOOP_COMMANDS_LOGGER.info("Not a valid MineSkin URL {}", testUrl);
+                String[] filetypes = {".jpg", ".jpeg", ".png"};
+
+                for (String filetype : filetypes) {
+                    String filename;
+                    String finalRawSkinValue = rawSkinValue;
+                    if (!Arrays.stream(filetypes).anyMatch(f -> Objects.equals(f, finalRawSkinValue))) {
+                        filename = rawSkinValue + filetype;
+                    } else {
+                        filename = rawSkinValue;
+                    }
+                    LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin input is not a URL, trying as file: {}", filename);
+                    LoopCommands.LOOP_COMMANDS_LOGGER.info("looking at file: {}", TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename));
+                    File skinFile = new File(TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename).toString());
+
+                    if (skinFile.isFile()) {
+                        LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected skin at {}", skinFile.getPath());
+                        finalSkin.value = rawSkinValue;
+
+                        finalSkin.skinType = SkinTypes.FILE;
+                    } else {
+                        LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin {} is not url or file.", filename);
+                    }
+                }
             }
-        } catch (URISyntaxException | NullPointerException e) {
-            LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin input is not a URL, treating as username: {}", rawSkinValue);
-        }
+        } catch (URISyntaxException | NullPointerException ignored) {}
 
         TimeLoop.modifyPlayerAttributes(targetPlayer, newName, finalSkin);
         source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);

@@ -186,18 +186,14 @@ public class TimeLoop {
                 float pitch = player.getXRot();
                 boolean setCamera = false;
 
-                double x = 0.0, y = 0.0, z = 0.0;
+                Vec3 teleportPosition = Vec3.ZERO;
                 switch (rewindType) {
                     case START_POSITION -> {
                         if (startPosition == null) {
                             LOOP_LOGGER.error("Player {} has no start position yet. Defaulting to join position.", playerName);
-                            x = joinPosition.x;
-                            y = joinPosition.y;
-                            z = joinPosition.z;
+                            teleportPosition = joinPosition;
                         } else {
-                            x = startPosition.x;
-                            y = startPosition.y;
-                            z = startPosition.z;
+                            teleportPosition = startPosition;
                         }
                     }
                     case JOIN_POSITION -> {
@@ -205,22 +201,18 @@ public class TimeLoop {
                             LOOP_LOGGER.error("Player {} has no join position yet. (somehow??)", playerName);
                             return;
                         }
-                        x = joinPosition.x;
-                        y = joinPosition.y;
-                        z = joinPosition.z;
+                        teleportPosition = joinPosition;
                     }
                     case SPAWN_POSITION -> {
-                        BlockPos spawnPosition = server.overworld().getSharedSpawnPos();
+                        Vec3 spawnPosition = server.overworld().getSharedSpawnPos().getBottomCenter();
                         if (spawnPosition == null) {
                             LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
                             return;
                         }
-                        x = spawnPosition.getX();
-                        y = spawnPosition.getY();
-                        z = spawnPosition.getZ();
+                        teleportPosition = spawnPosition;
                     }
                 }
-                player.teleportTo(targetLevel, x, y, z, absoluteMovement, yaw, pitch, setCamera);
+                player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch, setCamera);
             }
             playerData.setLastDimensionKey(player.level().dimension());
 
@@ -230,6 +222,7 @@ public class TimeLoop {
 
             switch (playerSkin.skinType) {
                 case MINESKIN -> skin_from = "skin_from_mineskin";
+                case FILE -> skin_from = "skin_from_file";
             }
 
 			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
@@ -412,7 +405,6 @@ public class TimeLoop {
 	 * Removes outdated entries from the scene file to ensure the number of subscenes does not exceed the maximum allowed loops.
 	 * The method checks if there are more recorded subscenes in the scene file than the value specified by maxLoops. If so,
 	 * it removes the oldest entries to maintain the desired number. The updated data is then saved back to the file.
-	 *
 	 */
 	private static void removeOldSceneEntries() {
 		if (maxLoops >= 1 && (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST || maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) && (loopIteration + 1) > maxLoops) {
