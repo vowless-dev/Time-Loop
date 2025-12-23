@@ -5,25 +5,19 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.Relative;
-import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -181,10 +175,9 @@ public class TimeLoop {
 
             if (!rewindType.equals(RewindTypes.NONE)) {
                 ServerLevel targetLevel = (ServerLevel) player.level();
-                Set<Relative> absoluteMovement = Collections.emptySet();
+                Set<RelativeMovement> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
-                boolean setCamera = false;
 
                 Vec3 teleportPosition = Vec3.ZERO;
                 switch (rewindType) {
@@ -212,7 +205,7 @@ public class TimeLoop {
                         teleportPosition = spawnPosition;
                     }
                 }
-                player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch, setCamera);
+                player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch);
             }
             playerData.setLastDimensionKey(player.level().dimension());
 
