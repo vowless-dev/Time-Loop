@@ -5,6 +5,7 @@ plugins {
 
 repositories {
     maven { url = "https://api.modrinth.com/maven" }
+    maven { url = "https://maven.maxhenkel.de/repository/public" }
 }
 
 group = project.maven_group
@@ -30,7 +31,11 @@ neoForge {
 dependencies {
     implementation project(path: ':common', configuration: 'namedElements')
     api project(":common")
-    implementation "maven.modrinth:motion-capture:${mod_mocap_version}-neoforge-${minecraft_version}"
+    runtimeOnly "maven.modrinth:motion-capture:${mod_mocap_version}-neoforge-${minecraft_version}"
+
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+
+    runtimeOnly "maven.modrinth:simple-voice-chat:neoforge-${minecraft_version}-${voicechat_version}"
 }
 
 jar {

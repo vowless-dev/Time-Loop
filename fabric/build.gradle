@@ -8,6 +8,7 @@ repositories {
     maven { url = "https://maven.parchmentmc.org" }
     maven { url = "https://maven.fabricmc.net/" }     
     maven { url = "https://api.modrinth.com/maven" }
+    maven { url = "https://maven.maxhenkel.de/repository/public" }
 }
 
 group = project.maven_group
@@ -28,7 +29,13 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
     
-    modImplementation "maven.modrinth:motion-capture:${mod_mocap_version}-fabric-${minecraft_version}"
+    modRuntimeOnly "maven.modrinth:motion-capture:${mod_mocap_version}-fabric-${minecraft_version}"
+
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+
+    modRuntimeOnly "maven.modrinth:simple-voice-chat:fabric-${minecraft_version}-${voicechat_version}"
+
+    modRuntimeOnly "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}:fabric-stub"
     
     implementation project(path: ':common', configuration: 'namedElements')
 }

@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +24,10 @@ public class TimeLoopFabric implements ModInitializer {
         LOOP_LOGGER.info("Initializing TimeLoop mod (Fabric)");
 
         TimeLoop.init();
+
+        LOOP_LOGGER.info("Is 'voicechat' loaded: {}", FabricLoader.getInstance().isModLoaded("voicechat"));
+
+        TimeLoop.voiceChatLoaded = FabricLoader.getInstance().isModLoaded("voicechat");
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Only register commands on the logical server

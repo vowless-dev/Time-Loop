@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -27,7 +28,9 @@ public class TimeLoopNeoForge {
 
     public TimeLoopNeoForge(IEventBus modEventBus) {
         LOOP_LOGGER.info("Initializing TimeLoop mod (NeoForge)");
-        
+
+        TimeLoop.voiceChatLoaded = ModList.get().isLoaded("voicechat");
+
         TimeLoop.init();
 
         // Register gameplay event listeners to the NeoForge EVENT bus

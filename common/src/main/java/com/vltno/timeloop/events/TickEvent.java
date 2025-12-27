@@ -8,6 +8,7 @@ public class TickEvent {
         if (TimeLoop.loopType == LoopTypes.SLEEP || TimeLoop.loopType == LoopTypes.DEATH) { return; }
 
         if (TimeLoop.isLooping) {
+            TimeLoop.tickCounter++;
             if (TimeLoop.loopType == LoopTypes.TIME_OF_DAY) {
                 if (TimeLoop.timeSetting <= TimeLoop.startTimeOfDay) { // prevent stupid 1 tick loop bug
                     TimeLoop.startTimeOfDay = 0;
@@ -19,12 +20,12 @@ public class TickEvent {
 
                 TimeLoop.updateInfoBar((int)TimeLoop.timeSetting, (int)timeLeft);
                 if (Math.abs(TimeLoop.timeSetting - timeLeft) >= TimeLoop.timeSetting) {
+                    TimeLoop.tickCounter = 0;
                     TimeLoop.runLoopIteration();
                 }
             }
 
             else if (TimeLoop.loopType == LoopTypes.TICKS) {
-                TimeLoop.tickCounter++;
                 TimeLoop.ticksLeft = TimeLoop.loopLengthTicks - TimeLoop.tickCounter;
 
                 TimeLoop.updateInfoBar(TimeLoop.loopLengthTicks, TimeLoop.ticksLeft);
@@ -34,6 +35,8 @@ public class TickEvent {
                     TimeLoop.runLoopIteration();
                 }
             }
+
+            TimeLoop.voiceBridge.onTick();
         }
     }
 }

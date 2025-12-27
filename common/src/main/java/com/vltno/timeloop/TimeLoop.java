@@ -9,9 +9,11 @@ import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
+import com.vltno.timeloop.voicechat.Bridge;
+import com.vltno.timeloop.voicechat.DummyBridge;
+import com.vltno.timeloop.voicechat.VoicechatBridge;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -37,6 +39,7 @@ import java.nio.file.Path;
 import java.util.*;
 
 public class TimeLoop {
+    //TODO: Use mocap API
 	public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
 	public static MinecraftServer server;
 	public static ServerLevel serverLevel;
@@ -64,6 +67,10 @@ public class TimeLoop {
 	public static RewindTypes rewindType;
 	public static boolean trackInventory;
 
+    public static boolean voiceChatLoaded;
+
+    public static Bridge voiceBridge;
+
 	// The configuration object loaded from disk
 	public static TimeLoopConfig config;
 
@@ -74,6 +81,13 @@ public class TimeLoop {
 	public static Path worldFolder;
 
 	public static void init() {
+
+        if (voiceChatLoaded) {
+            voiceBridge = new VoicechatBridge();
+        } else {
+            voiceBridge = new DummyBridge();
+        }
+
 		loopBossBar = new LoopBossBar();
 
 		LOOP_LOGGER.info("Initializing TimeLoop mod (Common)");
@@ -151,6 +165,8 @@ public class TimeLoop {
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
+        loopIteration++;
+
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
@@ -219,10 +235,11 @@ public class TimeLoop {
                 case FILE -> skin_from = "skin_from_file";
             }
 
+            playerData.resetTotalFramesRecorded();
+            voiceBridge.onStartPlayback(playerData);
 			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
 		});
 
-		loopIteration++;
 		config.loopIteration = loopIteration;
 		config.save();
 		LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
@@ -319,12 +336,7 @@ public class TimeLoop {
 
                 playerData.incrementActiveSubsceneIndex();
 
-                LOOP_LOGGER.info("Tick counter: " + tickCounter);
-                LOOP_LOGGER.info("Ticks left: " + ticksLeft);
-                LOOP_LOGGER.info("i: " + i);
-                LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
                 String subsceneName = String.format("%03d-%s", playerData.getActiveSubsceneIndex(), recordingName);
-                LOOP_LOGGER.info("SUBSCENE NAME: " + subsceneName);
                 executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, subsceneName, playerData.getTempOffset(i - 1)));
             }
         });
@@ -350,6 +362,7 @@ public class TimeLoop {
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
 			executeCommand("mocap playback stop_all including_others");
+            voiceBridge.stopPlayback("");
 			LOOP_LOGGER.info("Loop stopped!");
 		}
 	}

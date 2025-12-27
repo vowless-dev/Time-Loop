@@ -1,5 +1,6 @@
 package com.vltno.timeloop;
 
+import com.vltno.timeloop.voicechat.TimedAudioFrame;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
@@ -8,6 +9,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PlayerData {
     private final String name;
@@ -21,6 +27,14 @@ public class PlayerData {
     private int activeSubsceneIndex;
     private ArrayList<Float> tempOffsets;
     private boolean active;
+
+    private Map<Integer, Map<Integer, List<byte[]>>> voiceData = new ConcurrentHashMap<>();
+
+    private final Map<Integer, Map<Integer, List<Vec3>>> positionData = new ConcurrentHashMap<>(); // TODO: remove this if mocap api exposes position of playback
+
+    private final Map<Integer, Map<Integer, List<TimedAudioFrame>>> timedVoiceData = new ConcurrentHashMap<>();
+
+    private int totalFramesRecorded = 0;
 
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
@@ -36,6 +50,7 @@ public class PlayerData {
         this.tempOffsets = new ArrayList<Float>();
         this.tempOffsets.add(0f);
         this.active = true;
+        this.totalFramesRecorded = 0;
     }
 
     public String getName() {
@@ -153,5 +168,58 @@ public class PlayerData {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public void addAudioFrame(byte[] data) {
+        int currentTickOfLoop = TimeLoop.tickCounter;
+        int currentIteration = TimeLoop.loopIteration;
+        int segmentIndex = this.activeRecordingIndex;
+
+        timedVoiceData.computeIfAbsent(currentIteration, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(segmentIndex, k -> new CopyOnWriteArrayList<>())
+                .add(new TimedAudioFrame(currentTickOfLoop, totalFramesRecorded++, data));
+    }
+
+    public Map<Integer, List<TimedAudioFrame>> getTimedVoiceDataForIteration(int iteration) {
+        return timedVoiceData.getOrDefault(iteration, java.util.Collections.emptyMap());
+    }
+
+    public List<byte[]> getAudioFrames(int iteration, int index) {
+        Map<Integer, List<byte[]>> iterData = voiceData.get(iteration);
+        if (iterData != null) {
+            List<byte[]> frames = iterData.get(index);
+            if (frames != null) return frames;
+        }
+        return Collections.emptyList();
+    }
+
+    public Map<Integer, List<byte[]>> getAllAudioSegmentsForIteration(int iteration) {
+        Map<Integer, Map<Integer, List<byte[]>>> voiceMap = this.voiceData;
+        if (voiceMap.containsKey(iteration)) {
+            return voiceMap.get(iteration);
+        }
+        return Collections.emptyMap();
+    }
+
+    public void addPositionFrame(Vec3 pos) {
+        positionData.computeIfAbsent(TimeLoop.loopIteration, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(this.activeRecordingIndex, k -> new CopyOnWriteArrayList<>())
+                .add(pos);
+    }
+
+    public Vec3 getPositionAtFrame(int iteration, int index, int frameIndex) {
+        if (positionData.containsKey(iteration) && positionData.get(iteration).containsKey(index)) {
+            List<Vec3> positions = positionData.get(iteration).get(index);
+            if (frameIndex < positions.size()) {
+                return positions.get(frameIndex);
+            }
+            // Fallback to last known position if audio outlasts position recording
+            return positions.get(positions.size() - 1);
+        }
+        return null;
+    }
+
+    public void resetTotalFramesRecorded() {
+        this.totalFramesRecorded = 0;
     }
 }

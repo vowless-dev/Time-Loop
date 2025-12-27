@@ -32,3 +32,10 @@ type="required"
 versionRange="${mod_mocap_version}"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="voicechat_api"
+mandatory=false
+versionRange="[${voicechat_api_version},)"
+ordering="AFTER"
+side="BOTH"

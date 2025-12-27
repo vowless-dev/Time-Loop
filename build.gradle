@@ -48,6 +48,8 @@ subprojects {
                         "archives_name"                         : archives_name,
 
                         "minecraft_version"                     : minecraft_version,
+
+                        "voicechat_api_version"                 : voicechat_api_version,
                         
                         "fabric_loader_version"                 : fabric_loader_version,
                         "fabric_api_version"                    : fabric_api_version,
@@ -72,9 +74,9 @@ subprojects {
 
     if (project.name in ["fabric", "neoforge"]) {
         dependencies
-                {
-                    compileOnly project(":common")
-                }
+            {
+                compileOnly project(":common")
+            }
 
         processResources { from project(":common").sourceSets.main.resources }
         tasks.named("compileJava", JavaCompile) { source project(":common").sourceSets.main.allSource }
