@@ -29,6 +29,6 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="mocap"
 type="required"
-versionRange="${mod_mocap_version}"
+versionRange="${mod_mocap_version}+mc${minecraft_version}"
 ordering="NONE"
 side="BOTH"
