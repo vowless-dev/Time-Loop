@@ -125,8 +125,8 @@ public class TimeLoop {
 
         playerData.addTempOffset(convertTicksToSeconds(tickCounter));
 
-        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}. Temp offsets are {}",
-                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
+        LOOP_LOGGER.info("Player '{}' changed dimension. New active recording index is now {}. Temp offsets are {}",
+                player.getName().getString(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
 
         // Update the player's state
         playerData.setLastDimensionKey(currentDimension);
@@ -319,12 +319,7 @@ public class TimeLoop {
 
                 playerData.incrementActiveSubsceneIndex();
 
-                LOOP_LOGGER.info("Tick counter: " + tickCounter);
-                LOOP_LOGGER.info("Ticks left: " + ticksLeft);
-                LOOP_LOGGER.info("i: " + i);
-                LOOP_LOGGER.info("Get temp offset (i - 1): " + playerData.getTempOffset(i - 1));
                 String subsceneName = String.format("%03d-%s", playerData.getActiveSubsceneIndex(), recordingName);
-                LOOP_LOGGER.info("SUBSCENE NAME: " + subsceneName);
                 executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, subsceneName, playerData.getTempOffset(i - 1)));
             }
         });
