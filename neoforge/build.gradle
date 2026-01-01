@@ -30,7 +30,7 @@ neoForge {
 dependencies {
     implementation project(path: ':common', configuration: 'namedElements')
     api project(":common")
-    runtimeOnly "maven.modrinth:motion-capture:${mod_mocap_version}-neoforge-${minecraft_version}"
+    implementation "maven.modrinth:motion-capture:${mod_mocap_version}-neoforge-${minecraft_version}"
 }
 
 jar {
