@@ -13,9 +13,9 @@ public class TickEvent {
                     TimeLoop.startTimeOfDay = 0;
                     TimeLoop.config.startTimeOfDay = 0;}
 
-                long time = (TimeLoop.serverLevel.dayTime() > 24000 ? TimeLoop.serverLevel.dayTime() % 24000 : TimeLoop.serverLevel.dayTime());
+                long time = (TimeLoop.serverLevel.getDayTime() > 24000 ? TimeLoop.serverLevel.getDayTime() % 24000 : TimeLoop.serverLevel.getDayTime());
 
-                long timeLeft = (time > TimeLoop.timeSetting) ? Math.abs(TimeLoop.serverLevel.dayTime() - (2 * TimeLoop.timeSetting)) : Math.abs(time - TimeLoop.timeSetting);
+                long timeLeft = (time > TimeLoop.timeSetting) ? Math.abs(TimeLoop.serverLevel.getDayTime() - (2 * TimeLoop.timeSetting)) : Math.abs(time - TimeLoop.timeSetting);
 
                 TimeLoop.updateInfoBar((int)TimeLoop.timeSetting, (int)timeLeft);
                 if (Math.abs(TimeLoop.timeSetting - timeLeft) >= TimeLoop.timeSetting) {

@@ -16,19 +16,19 @@ public class BaseCommands {
 
         parentBuilder.then(Commands.literal("start")
                 .executes(BaseCommands::start)
-                .requires(source -> source.hasPermission(2)));
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)));
         
         parentBuilder.then(Commands.literal("skip")
                 .executes(BaseCommands::skip)
-                .requires(source -> source.hasPermission(2)));
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)));
         
         parentBuilder.then(Commands.literal("stop")
                 .executes(BaseCommands::stop)
-                .requires(source -> source.hasPermission(2)));
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)));
 
         parentBuilder.then(Commands.literal("reset")
                 .executes(BaseCommands::reset)
-                .requires(source -> source.hasPermission(2)));
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)));
 
         parentBuilder.then(Commands.literal("status")
                 .executes(BaseCommands::status)); // No permission needed
