@@ -24,23 +24,26 @@ public class VoicechatBridge implements Bridge {
     private final Map<String, LocationalAudioChannel> activeChannels = new ConcurrentHashMap<>();
     private final Map<String, AudioPlayer> activePlayers = new ConcurrentHashMap<>();
 
-    // BORROWED FROM REPO: A cache so we don't re-decode old loops every 30 seconds
     private final Map<String, short[]> decodedAudioCache = new ConcurrentHashMap<>();
 
-    private final ExecutorService decoderExecutor = Executors.newFixedThreadPool(4, r -> {
+    // Use available processors to prevent bottlenecking during loop restarts
+    private final ExecutorService decoderExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), r -> {
         Thread t = new Thread(r);
-        t.setPriority(Thread.MAX_PRIORITY); // Give audio decoding the most "power"
+        t.setPriority(Thread.MAX_PRIORITY);
         return t;
     });
 
     @Override
     public void onStartPlayback(PlayerData playerData) {
         if (serverApi == null) return;
+
+        // Stop current iterations for this player before starting new ones
         stopPlayback(playerData.getName());
 
         final int currentIteration = TimeLoop.loopIteration;
         final ServerLevel apiLevel = serverApi.fromServerLevel(TimeLoop.serverLevel);
         final String pName = playerData.getName();
+        final int masterStartTick = TimeLoop.tickCounter;
 
         CompletableFuture.runAsync(() -> {
             for (int iter = 0; iter < currentIteration; iter++) {
@@ -51,19 +54,17 @@ public class VoicechatBridge implements Bridge {
                     int segmentIndex = entry.getKey();
                     String cacheKey = pName + "-" + iter + "-" + segmentIndex;
 
-                    // BORROWED LOGIC: Check cache first to prevent lag spikes
                     short[] fullLoopBuffer = decodedAudioCache.computeIfAbsent(cacheKey, k -> {
+                        // Max length based on loop ticks * 48kHz (2400 samples per tick)
                         short[] buffer = new short[TimeLoop.loopLengthTicks * 2400];
                         OpusDecoder decoder = serverApi.createDecoder();
 
                         try {
                             int lastExpectedSample = 0;
-
                             for (TimedAudioFrame frame : entry.getValue()) {
-                                // Each frame index represents exactly 960 samples (20ms)
                                 int targetSampleIndex = frame.frameIndex() * 960;
 
-                                // PLC Smoothing for gaps
+                                // Packet Loss Concealment (PLC) for gaps
                                 while (lastExpectedSample < targetSampleIndex) {
                                     short[] plcFrame = decoder.decode(null);
                                     int toCopy = Math.min(960, targetSampleIndex - lastExpectedSample);
@@ -85,10 +86,10 @@ public class VoicechatBridge implements Bridge {
                         return buffer;
                     });
 
-                    dumpAudioToFile(TimeLoop.worldFolder.resolve(cacheKey + ".raw").toString(), fullLoopBuffer); // TODO - DEBUG! REMOVE BEFORE RELEASE!!!
+                    // Start the audio pointer at the EXACT master tick (converted to 20ms frames)
+                    int currentFrameIndex = (int) (masterStartTick * (50.0 / 20.0));
+                    final int startPointer = currentFrameIndex * 960;
 
-                    // Start the audio pointer at the EXACT master tick
-                    final int startPointer = TimeLoop.tickCounter * 2400;
                     if (startPointer >= fullLoopBuffer.length) continue;
 
                     LocationalAudioChannel channel = serverApi.createLocationalAudioChannel(
@@ -96,12 +97,10 @@ public class VoicechatBridge implements Bridge {
                     );
                     channel.setCategory(LOOP_CATEGORY.getId());
 
-                    // We use a queue to "pre-load" audio frames so the player never starves
                     Queue<short[]> frameQueue = new LinkedList<>();
-
-                    // 1. Pre-fill the queue with a few frames (e.g., 100ms / 5 frames)
-                    // to give the player a head start.
                     int preloadPointer = startPointer;
+
+                    // Pre-fill 100ms of audio to prevent starvation
                     for (int i = 0; i < 5 && (preloadPointer + 960) <= fullLoopBuffer.length; i++) {
                         short[] initialFrame = new short[960];
                         System.arraycopy(fullLoopBuffer, preloadPointer, initialFrame, 0, 960);
@@ -114,35 +113,33 @@ public class VoicechatBridge implements Bridge {
                     AudioPlayer player = serverApi.createAudioPlayer(channel, serverApi.createEncoder(), () -> {
                         if (TimeLoop.server.isPaused()) return new short[960];
 
-                        // If the queue has data, give it to the player immediately
-                        if (!frameQueue.isEmpty()) {
-                            return frameQueue.poll();
-                        }
+                        if (!frameQueue.isEmpty()) return frameQueue.poll();
 
-                        // If the queue is empty, try to grab the next frame from the main buffer
                         if (currentPointer[0] + 960 <= fullLoopBuffer.length) {
                             short[] frame = new short[960];
                             System.arraycopy(fullLoopBuffer, currentPointer[0], frame, 0, 960);
                             currentPointer[0] += 960;
 
-                            // BORROWED TIP: Occasionally "over-read" to keep the queue healthy
-                            // This prevents the "choppy" sound if the server lags for a millisecond
+                            // Queue health: occasionally buffer ahead
                             if (currentPointer[0] + 960 <= fullLoopBuffer.length) {
                                 short[] nextFrame = new short[960];
                                 System.arraycopy(fullLoopBuffer, currentPointer[0], nextFrame, 0, 960);
                                 frameQueue.add(nextFrame);
                                 currentPointer[0] += 960;
                             }
-
                             return frame;
                         }
-
-                        return null; // End of recording
+                        return null;
                     });
+
+                    dumpAudioToFile(String.format("%s-%d-%d.pcm", playerData.getName(), TimeLoop.loopIteration, playerData.getActiveRecordingIndex()), fullLoopBuffer);
 
                     player.startPlaying();
                     activeChannels.put(cacheKey, channel);
                     activePlayers.put(cacheKey, player);
+
+                    // Tiny stagger to prevent network burst spikes
+                    try { Thread.sleep(5); } catch (InterruptedException ignored) {}
                 }
             }
         }, decoderExecutor);
@@ -162,6 +159,7 @@ public class VoicechatBridge implements Bridge {
 
             PlayerData data = TimeLoop.loopSceneManager.getRecordingPlayer(pName);
             if (data != null) {
+                // If the mocap playback started at tick 0, this is sync'd.
                 Vec3 pos = data.getPositionAtFrame(iter, segment, masterTick);
                 if (pos != null) {
                     channel.updateLocation(serverApi.createPosition(pos.x, pos.y, pos.z));
@@ -172,18 +170,16 @@ public class VoicechatBridge implements Bridge {
 
     @Override
     public void stopPlayback(String playerName) {
-        activePlayers.keySet().removeIf(key -> {
+        activePlayers.keySet().forEach(key -> {
             if (key.startsWith(playerName + "-")) {
                 AudioPlayer p = activePlayers.get(key);
                 if (p != null) p.stopPlaying();
-                return true;
             }
-            return false;
         });
+        activePlayers.keySet().removeIf(key -> key.startsWith(playerName + "-"));
         activeChannels.keySet().removeIf(key -> key.startsWith(playerName + "-"));
     }
 
-    // IMPORTANT: Clear the cache when the loop is totally reset/cleared
     public void clearCache() {
         decodedAudioCache.clear();
     }
@@ -191,12 +187,10 @@ public class VoicechatBridge implements Bridge {
     public void dumpAudioToFile(String fileName, short[] pcmData) {
         try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(fileName))) {
             for (short s : pcmData) {
-                // Write Little Endian PCM (Standard for audio players)
                 dos.writeShort(Short.reverseBytes(s));
             }
-            TimeLoop.LOOP_LOGGER.info("DEBUG: Audio dumped to {}", fileName);
         } catch (Exception e) {
-            TimeLoop.LOOP_LOGGER.error("DEBUG: Failed to dump audio", e);
+            TimeLoop.LOOP_LOGGER.error("Failed to dump audio", e);
         }
     }
 }

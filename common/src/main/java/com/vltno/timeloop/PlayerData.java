@@ -40,7 +40,7 @@ public class PlayerData {
         this.name = name;
         this.nickname = nickname;
         this.skin = new Skin();
-        this.skin.value = name;
+        this.skin.value = skin;
         this.startPosition = null;
         this.joinPosition = joinPosition;
         this.setInventoryTag(inventoryTag);
@@ -182,23 +182,6 @@ public class PlayerData {
 
     public Map<Integer, List<TimedAudioFrame>> getTimedVoiceDataForIteration(int iteration) {
         return timedVoiceData.getOrDefault(iteration, java.util.Collections.emptyMap());
-    }
-
-    public List<byte[]> getAudioFrames(int iteration, int index) {
-        Map<Integer, List<byte[]>> iterData = voiceData.get(iteration);
-        if (iterData != null) {
-            List<byte[]> frames = iterData.get(index);
-            if (frames != null) return frames;
-        }
-        return Collections.emptyList();
-    }
-
-    public Map<Integer, List<byte[]>> getAllAudioSegmentsForIteration(int iteration) {
-        Map<Integer, Map<Integer, List<byte[]>>> voiceMap = this.voiceData;
-        if (voiceMap.containsKey(iteration)) {
-            return voiceMap.get(iteration);
-        }
-        return Collections.emptyMap();
     }
 
     public void addPositionFrame(Vec3 pos) {
