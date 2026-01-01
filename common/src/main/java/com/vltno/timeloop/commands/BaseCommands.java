@@ -9,8 +9,6 @@ import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
-import static net.minecraft.network.chat.ComponentUtils.formatList;
-
 public class BaseCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
 
