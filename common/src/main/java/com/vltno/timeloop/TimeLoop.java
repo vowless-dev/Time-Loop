@@ -472,53 +472,135 @@ public class TimeLoop {
         return ticks / 20f;
     }
 
-	public static CompoundTag saveFullInventory(Player player, HolderLookup.Provider provider) {
-		CompoundTag tag = new CompoundTag();
+    private static final EquipmentSlot[] ARMOR_SLOTS = new EquipmentSlot[] {
+            EquipmentSlot.FEET,
+            EquipmentSlot.LEGS,
+            EquipmentSlot.CHEST,
+            EquipmentSlot.HEAD
+    };
 
-		// Main inventory
-		ListTag main = new ListTag();
-		for (ItemStack stack : player.getInventory().items) {
-			main.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("main", main);
+    private static CompoundTag stackToNbt(ItemStack stack, HolderLookup.Provider provider) {
+        if (stack.isEmpty()) {
+            return new CompoundTag();
+        }
 
-		// Armor
-		ListTag armor = new ListTag();
-		for (ItemStack stack : player.getInventory().armor) {
-			armor.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("armor", armor);
+        DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-		// Offhand
-		ListTag offhand = new ListTag();
-		for (ItemStack stack : player.getInventory().offhand) {
-			offhand.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("offhand", offhand);
+        // Encode the ItemStack using its static CODEC
+        Tag resultTag = ItemStack.CODEC.encodeStart(ops, stack)
+                .getOrThrow(error -> new IllegalStateException("Failed to encode ItemStack: " + error));
 
-		return tag;
-	}
+        return (CompoundTag) resultTag;
+    }
 
-	public static void loadFullInventory(Player player, CompoundTag tag, HolderLookup.Provider provider) {
-		// Main inventory
-		ListTag main = tag.getList("main", 10);
-		for (int i = 0; i < player.getInventory().items.size(); i++) {
-			CompoundTag itemTag = i < main.size() ? main.getCompound(i) : new CompoundTag();
-			player.getInventory().items.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
+    /**
+     * Helper method to deserialize an ItemStack from a CompoundTag using its Codec.
+     * This bypasses the 'parseOptional' resolution error.
+     */
+    private static ItemStack stackFromNbt(CompoundTag itemTag, HolderLookup.Provider provider) {
+        if (itemTag.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
 
-		// Armor
-		ListTag armor = tag.getList("armor", 10);
-		for (int i = 0; i < player.getInventory().armor.size(); i++) {
-			CompoundTag itemTag = i < armor.size() ? armor.getCompound(i) : new CompoundTag();
-			player.getInventory().armor.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
+        DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-		// Offhand
-		ListTag offhand = tag.getList("offhand", 10);
-		for (int i = 0; i < player.getInventory().offhand.size(); i++) {
-			CompoundTag itemTag = i < offhand.size() ? offhand.getCompound(i) : new CompoundTag();
-			player.getInventory().offhand.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
-	}
+        // Decode the ItemStack using its static CODEC
+        return ItemStack.CODEC.parse(ops, itemTag)
+                .result().orElse(ItemStack.EMPTY);
+    }
+
+    public static CompoundTag saveFullInventory(Player player, HolderLookup.Provider provider) {
+        CompoundTag tag = new CompoundTag();
+        Inventory inventory = player.getInventory();
+
+        // 1. Main inventory (Slots 0-35)
+        ListTag main = new ListTag();
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = inventory.getItem(i); // Use getItem(index)
+
+            main.add(stackToNbt(stack, provider)); // Use Codec helper
+        }
+        tag.put("main", main);
+
+        // 2. Armor (Iterate using the explicit, fixed array)
+        ListTag armor = new ListTag();
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot); // Use player.getItemBySlot()
+
+            armor.add(stackToNbt(stack, provider)); // Use Codec helper
+        }
+        tag.put("armor", armor);
+
+        // 3. Offhand (Single slot)
+        ListTag offhand = new ListTag();
+        ItemStack offhandStack = player.getItemBySlot(EquipmentSlot.OFFHAND);
+
+        offhand.add(stackToNbt(offhandStack, provider)); // Use Codec helper
+        tag.put("offhand", offhand);
+
+        return tag;
+    }
+
+    public static void loadFullInventory(Player player, CompoundTag tag, HolderLookup.Provider provider) {
+        Inventory inventory = player.getInventory();
+
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        // We use .orElseGet(ListTag::new) to handle the Optional and missing tag.
+        ListTag main = tag.getList("main").orElseGet(ListTag::new);
+
+        // 1. Main inventory
+        for (int i = 0; i < 36; i++) {
+
+            // FIX 2: ListTag.getCompound(i) returns Optional<CompoundTag>.
+            // We check bounds and unwrap the Optional, defaulting to a new empty tag.
+            Optional<CompoundTag> optionalItemTag = i < main.size()
+                    ? main.getCompound(i)
+                    : Optional.empty();
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper to handle ItemStack deserialization.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            inventory.setItem(i, stack);
+        }
+
+        // 2. Armor (Load using the explicit, fixed array)
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        ListTag armor = tag.getList("armor").orElseGet(ListTag::new);
+
+        for (int i = 0; i < ARMOR_SLOTS.length; i++) {
+            EquipmentSlot slot = ARMOR_SLOTS[i];
+
+            // FIX 2: ListTag.getCompound(i) returns Optional<CompoundTag>.
+            Optional<CompoundTag> optionalItemTag = i < armor.size()
+                    ? armor.getCompound(i)
+                    : Optional.empty();
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            player.setItemSlot(slot, stack);
+        }
+
+        // 3. Offhand (Single slot)
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        ListTag offhand = tag.getList("offhand").orElseGet(ListTag::new);
+
+        if (!offhand.isEmpty()) {
+            // FIX 2: ListTag.getCompound(0) returns Optional<CompoundTag>.
+            Optional<CompoundTag> optionalItemTag = offhand.getCompound(0);
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            player.setItemSlot(EquipmentSlot.OFFHAND, stack);
+        } else {
+            player.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        }
+    }
 }

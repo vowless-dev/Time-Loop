@@ -81,7 +81,7 @@ public class PlayerData {
     public CompoundTag getInventoryTag() {
         if (inventoryTag == null || inventoryTag.isEmpty()) return new CompoundTag();
         try {
-            Tag tag = TagParser.parseTag(this.inventoryTag);
+            Tag tag = TagParser.parseCompoundFully(this.inventoryTag);
             if (tag instanceof CompoundTag compoundTag) {
                 return compoundTag;
             }
