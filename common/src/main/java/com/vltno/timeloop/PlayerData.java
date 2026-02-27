@@ -9,48 +9,58 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PlayerData {
+    // ── Persisted fields (serialized to config JSON via Gson) ──
     private final String name;
     private String nickname;
     private Skin skin;
-    private Vec3 startPosition;
-    private Vec3 joinPosition;
     private String inventoryTag;
-    private ResourceKey<Level> lastDimensionKey;
-    private int activeRecordingIndex;
-    private int activeSubsceneIndex;
-    private ArrayList<Float> tempOffsets;
     private boolean active;
 
-    private Map<Integer, Map<Integer, List<byte[]>>> voiceData = new ConcurrentHashMap<>();
+    // Vec3 is stored as doubles for Gson (Vec3 has no no-arg constructor)
+    private double startPosX, startPosY, startPosZ;
+    private boolean hasStartPosition;
+    private double joinPosX, joinPosY, joinPosZ;
 
-    private final Map<Integer, Map<Integer, List<Vec3>>> positionData = new ConcurrentHashMap<>(); // TODO: remove this if mocap api exposes position of playback
-
-    private final Map<Integer, Map<Integer, List<TimedAudioFrame>>> timedVoiceData = new ConcurrentHashMap<>();
-
-    private int totalFramesRecorded = 0;
+    // ── Runtime-only fields (excluded from Gson serialization) ─-
+    private transient ResourceKey<Level> lastDimensionKey;
+    private transient int activeRecordingIndex;
+    private transient int activeSubsceneIndex;
+    private transient ArrayList<Float> tempOffsets;
+    private transient int activeSegment;
 
     public PlayerData(String name, String nickname, String skin, Vec3 joinPosition, CompoundTag inventoryTag) {
         this.name = name;
         this.nickname = nickname;
         this.skin = new Skin();
         this.skin.value = skin;
-        this.startPosition = null;
-        this.joinPosition = joinPosition;
+        this.hasStartPosition = false;
+        setJoinPosition(joinPosition);
         this.setInventoryTag(inventoryTag);
+        this.active = true;
+        initTransients();
+    }
+
+    /**
+     * Initializes transient fields that Gson skips during deserialization.
+     * Must be called after Gson constructs an instance (e.g. in config load).
+     */
+    public void initTransients() {
         this.lastDimensionKey = null;
         this.activeRecordingIndex = 1;
         this.activeSubsceneIndex = 0;
-        this.tempOffsets = new ArrayList<Float>();
+        this.tempOffsets = new ArrayList<>();
         this.tempOffsets.add(0f);
-        this.active = true;
-        this.totalFramesRecorded = 0;
+        this.activeSegment = 1;
+        // Audio maps are transient (saved separately by AudioPersistence)
+        this.audio = new ConcurrentHashMap<>();
+        this.positions = new ConcurrentHashMap<>();
     }
 
     public String getName() {
@@ -74,19 +84,28 @@ public class PlayerData {
     }
 
     public Vec3 getStartPosition() {
-        return startPosition;
+        return hasStartPosition ? new Vec3(startPosX, startPosY, startPosZ) : null;
     }
 
-    public void setStartPosition(Vec3 newStartPosition) {
-        this.startPosition = newStartPosition;
+    public void setStartPosition(Vec3 pos) {
+        if (pos == null) {
+            this.hasStartPosition = false;
+        } else {
+            this.startPosX = pos.x;
+            this.startPosY = pos.y;
+            this.startPosZ = pos.z;
+            this.hasStartPosition = true;
+        }
     }
 
     public Vec3 getJoinPosition() {
-        return joinPosition;
+        return new Vec3(joinPosX, joinPosY, joinPosZ);
     }
-    
-    public void setJoinPosition(Vec3 newJoinPosition) {
-        this.joinPosition = newJoinPosition;
+
+    public void setJoinPosition(Vec3 pos) {
+        this.joinPosX = pos.x;
+        this.joinPosY = pos.y;
+        this.joinPosZ = pos.z;
     }
 
     public void setInventoryTag(CompoundTag inventoryTag) {
@@ -170,39 +189,71 @@ public class PlayerData {
         this.active = active;
     }
 
-    public void addAudioFrame(byte[] data) {
-        int currentTickOfLoop = TimeLoop.tickCounter;
-        int currentIteration = TimeLoop.loopIteration;
-        int segmentIndex = this.activeRecordingIndex;
 
-        timedVoiceData.computeIfAbsent(currentIteration, k -> new ConcurrentHashMap<>())
-                .computeIfAbsent(segmentIndex, k -> new CopyOnWriteArrayList<>())
-                .add(new TimedAudioFrame(currentTickOfLoop, totalFramesRecorded++, data));
+    /* ───────────────── SEGMENTS ───────────────── */
+
+    public void resetSegments() {
+        activeSegment = 0;
     }
 
-    public Map<Integer, List<TimedAudioFrame>> getTimedVoiceDataForIteration(int iteration) {
-        return timedVoiceData.getOrDefault(iteration, java.util.Collections.emptyMap());
+    public void nextSegment() {
+        activeSegment++;
     }
 
-    public void addPositionFrame(Vec3 pos) {
-        positionData.computeIfAbsent(TimeLoop.loopIteration, k -> new ConcurrentHashMap<>())
-                .computeIfAbsent(this.activeRecordingIndex, k -> new CopyOnWriteArrayList<>())
-                .add(pos);
+    public int getActiveSegment() {
+        return activeSegment;
     }
 
-    public Vec3 getPositionAtFrame(int iteration, int index, int frameIndex) {
-        if (positionData.containsKey(iteration) && positionData.get(iteration).containsKey(index)) {
-            List<Vec3> positions = positionData.get(iteration).get(index);
-            if (frameIndex < positions.size()) {
-                return positions.get(frameIndex);
-            }
-            // Fallback to last known position if audio outlasts position recording
-            return positions.get(positions.size() - 1);
-        }
-        return null;
+    /* ───────────────── RECORDING (transient — saved via AudioPersistence) ───────────────── */
+
+    // iter → seg → list of timed opus frames
+    private transient Map<Integer, Map<Integer, List<TimedAudioFrame>>> audio = new ConcurrentHashMap<>();
+    // iter → seg → tick → position (TreeMap for floor-lookup)
+    private transient Map<Integer, Map<Integer, TreeMap<Integer, Vec3>>> positions = new ConcurrentHashMap<>();
+
+    public void addVoiceFrame(int iteration, int tick, byte[] opus, Vec3 pos) {
+        int seg = activeSegment;
+
+        audio.computeIfAbsent(iteration, i -> new ConcurrentHashMap<>())
+                .computeIfAbsent(seg, s -> new CopyOnWriteArrayList<>())
+                .add(new TimedAudioFrame(tick, opus));
+
+        positions.computeIfAbsent(iteration, i -> new ConcurrentHashMap<>())
+                .computeIfAbsent(seg, s -> new TreeMap<>())
+                .put(tick, pos);
     }
 
-    public void resetTotalFramesRecorded() {
-        this.totalFramesRecorded = 0;
+    /**
+     * Adds a voice frame for a specific iteration and segment.
+     * Used by {@link com.vltno.timeloop.voicechat.AudioPersistence} when loading
+     * saved audio from disk (where the segment is known explicitly, not derived
+     * from the active segment).
+     */
+    public void addVoiceFrameForLoad(int iteration, int segment, int tick, byte[] opus, Vec3 pos) {
+        audio.computeIfAbsent(iteration, i -> new ConcurrentHashMap<>())
+                .computeIfAbsent(segment, s -> new CopyOnWriteArrayList<>())
+                .add(new TimedAudioFrame(tick, opus));
+
+        positions.computeIfAbsent(iteration, i -> new ConcurrentHashMap<>())
+                .computeIfAbsent(segment, s -> new TreeMap<>())
+                .put(tick, pos);
+    }
+
+    public Map<Integer, List<TimedAudioFrame>> getAudio(int iteration) {
+        return audio.getOrDefault(iteration, Map.of());
+    }
+
+    /**
+     * Look up the player position for a given tick using floor-key lookup.
+     * Returns the position at the latest tick <= the requested tick,
+     * or null if no positions were recorded for this iteration/segment.
+     */
+    public Vec3 getPosition(int iteration, int segment, int tick) {
+        var segMap = positions.get(iteration);
+        if (segMap == null) return null;
+        var tree = segMap.get(segment);
+        if (tree == null || tree.isEmpty()) return null;
+        var entry = tree.floorEntry(tick);
+        return entry != null ? entry.getValue() : tree.firstEntry().getValue();
     }
 }

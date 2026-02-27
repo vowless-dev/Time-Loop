@@ -1,5 +1,6 @@
 package com.vltno.timeloop.commands;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -133,6 +134,10 @@ public class SettingsCommands {
                         .suggests((context, builder) -> CommandUtils.EnumSuggestion(builder, RewindTypes.class))
                         .executes(SettingsCommands::rewindType)));
         
+        //region voice
+        registerVoiceCommands(settingsNode);
+        //endregion
+
         TogglesCommands.register(settingsNode);
 
         parentBuilder.then(settingsNode);
@@ -257,6 +262,52 @@ public class SettingsCommands {
         TimeLoop.modifyPlayerAttributes(targetPlayer, newName, finalSkin);
         source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, finalSkin.value);
+        return 1;
+    }
+
+    /**
+     * Registers the {@code /loop settings voice} category and its subcommands.
+     * <p>
+     * The category requires Simple Voice Chat to be installed.
+     * Subcommands have their own requirements (e.g. voiceInteraction requires
+     * voicechat-interaction). If SVC is installed but no subcommands are valid,
+     * the category is not registered at all.
+     */
+    private static void registerVoiceCommands(LiteralArgumentBuilder<CommandSourceStack> settingsNode) {
+        if (!TimeLoop.voiceChatLoaded) return;
+
+        // Track whether any subcommands were added
+        boolean hasSubcommands = false;
+
+        LiteralArgumentBuilder<CommandSourceStack> voiceNode = Commands.literal("voice");
+
+        // voiceInteraction toggle — requires voicechat-interaction
+        if (TimeLoop.vcInteractionLoaded) {
+            voiceNode.then(Commands.literal("voiceInteraction")
+                    .executes(context -> {
+                        context.getSource().sendSuccess(() -> Component.literal(
+                                "Voice interaction is set to: " + TimeLoop.voiceInteractionEnabled), false);
+                        return 1;
+                    })
+                    .then(Commands.argument("value", BoolArgumentType.bool())
+                            .executes(SettingsCommands::voiceInteraction)));
+            hasSubcommands = true;
+        }
+
+        if (hasSubcommands) {
+            settingsNode.then(voiceNode);
+        }
+    }
+
+    private static int voiceInteraction(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.voiceInteractionEnabled = newValue;
+        TimeLoop.config.voiceInteractionEnabled = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Voice interaction is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Voice interaction set to {}", newValue);
         return 1;
     }
 

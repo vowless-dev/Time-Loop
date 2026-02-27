@@ -74,8 +74,14 @@ public class PlayConnectionEvent {
             TimeLoop.LOOP_LOGGER.info("Starting recording for newly joined player: {}", playerName);
             TimeLoop.executeCommand(String.format("mocap recording start %s", playerName));
 
-            if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
+            // If playback hasn't been started yet this iteration (e.g. server restart
+            // mid-loop, or singleplayer rejoin), start mocap + voice for ALL players now.
+            if (!TimeLoop.playbackStartedThisIteration && TimeLoop.loopIteration > 0) {
+                TimeLoop.LOOP_LOGGER.info("First player join mid-loop — starting playback for all players");
+                TimeLoop.startPlaybackForAllPlayers();
+            }
 
+            if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
                 boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
                 TimeLoop.loopBossBar.visible(shouldBeVisible);
             }
@@ -86,13 +92,19 @@ public class PlayConnectionEvent {
         ServerPlayer player = handler.player;
         String playerName = player.getName().getString();
 
+        if (TimeLoop.isLooping) {
+            // Save voice audio BEFORE marking inactive (so the save includes this player)
+            TimeLoop.voiceBridge.saveAudio();
+            TimeLoop.saveRecordings();
+            TimeLoop.loopSceneManager.saveRecordingPlayers();
+        }
+
+        // Stop voice playback for the disconnecting player
+        TimeLoop.voiceBridge.stopPlayback(playerName);
+
         TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(false);
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.removePlayer(player);
-        }
-        if (TimeLoop.isLooping) {
-            TimeLoop.saveRecordings();
-            TimeLoop.loopSceneManager.saveRecordingPlayers();
         }
     }
 }

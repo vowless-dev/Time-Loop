@@ -3,12 +3,9 @@ package com.vltno.timeloop.voicechat;
 import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.TimeLoop;
 import de.maxhenkel.voicechat.api.VoicechatApi;
-import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
-import de.maxhenkel.voicechat.api.packets.MicrophonePacket;
-import net.minecraft.server.level.ServerPlayer;
 
 public class TimeLoopVoicechatPlugin {
     public static String getPluginId() {
@@ -19,34 +16,41 @@ public class TimeLoopVoicechatPlugin {
         TimeLoop.LOOP_LOGGER.info("Initialised VC");
     }
 
-    public static void registerEvents(EventRegistration registration) {
-        registration.registerEvent(MicrophonePacketEvent.class, TimeLoopVoicechatPlugin::onMicrophonePacket);
-        registration.registerEvent(VoicechatServerStartedEvent.class, TimeLoopVoicechatPlugin::onVoicechatServerStarted);
+    public static void registerEvents(EventRegistration reg) {
+        reg.registerEvent(MicrophonePacketEvent.class, TimeLoopVoicechatPlugin::onMic);
+        reg.registerEvent(VoicechatServerStartedEvent.class, e -> {
+            VoicechatBridge.serverApi = e.getVoicechat();
+            VoicechatBridge.initCategory();
+        });
     }
 
-    private static void onMicrophonePacket(MicrophonePacketEvent event) {
-        VoicechatConnection connection = event.getSenderConnection(); // Null if not sent by player
-        if (connection != null && TimeLoop.isLooping) {
-            ServerPlayer player = TimeLoop.server.getPlayerList().getPlayer(connection.getPlayer().getUuid());
-            String playerName = player.getName().getString();
-            PlayerData playerData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
+    private static void onMic(MicrophonePacketEvent event) {
+        if (!TimeLoop.isLooping) return;
+        if (event.getSenderConnection() == null) return;
 
-            if (playerData == null) return;
+        byte[] opusData = event.getPacket().getOpusEncodedData();
+        if (opusData.length == 0) return;
 
-            MicrophonePacket packet = event.getPacket();
+        var player = TimeLoop.server.getPlayerList()
+                .getPlayer(event.getSenderConnection().getPlayer().getUuid());
 
-            playerData.addAudioFrame(packet.getOpusEncodedData());
+        if (player == null) return;
 
-            playerData.addPositionFrame(player.position());
-        }
+        PlayerData data =
+                TimeLoop.loopSceneManager.getRecordingPlayer(player.getName().getString());
+
+        if (data == null || !data.getActive()) return;
+
+        data.addVoiceFrame(
+                TimeLoop.loopIteration,
+                TimeLoop.tickCounter,
+                opusData,
+                player.position()
+        );
+
+        // Game event emission for live players (sculk/warden) is handled
+        // entirely by voicechat-interaction when it is installed. When VCI
+        // is NOT installed, voice game events are disabled — no sculk interaction.
     }
 
-    private static void onVoicechatServerStarted(VoicechatServerStartedEvent event) {
-        TimeLoop.LOOP_LOGGER.info("VC server started");
-        VoicechatBridge.serverApi = event.getVoicechat();
-
-        VoicechatBridge.LOOP_CATEGORY = VoicechatBridge.serverApi.volumeCategoryBuilder().setId("timeloop_voices").setName("Time Loop Voices").setDescription("The volume of looped players' voices in the Time Loop mod").build();
-
-        VoicechatBridge.serverApi.registerVolumeCategory(VoicechatBridge.LOOP_CATEGORY);
-    }
 }

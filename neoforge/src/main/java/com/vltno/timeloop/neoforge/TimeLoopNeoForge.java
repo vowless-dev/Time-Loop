@@ -17,6 +17,9 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerWakeUpEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.gameevent.GameEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +32,22 @@ public class TimeLoopNeoForge {
     public TimeLoopNeoForge(IEventBus modEventBus) {
         LOOP_LOGGER.info("Initializing TimeLoop mod (NeoForge)");
 
-        TimeLoop.voiceChatLoaded = ModList.get().isLoaded("voicechat");
+        ModList modList = ModList.get();
+        TimeLoop.voiceChatLoaded = modList.isLoaded("voicechat");
+        TimeLoop.vcInteractionLoaded = modList.isLoaded("vcinteraction");
+
+        LOOP_LOGGER.info("Mod detection \u2014 voicechat: {}, vcinteraction: {}",
+                TimeLoop.voiceChatLoaded, TimeLoop.vcInteractionLoaded);
+
+        // Register our own voice GameEvent (timeloop:voice) only when
+        // voicechat-interaction is installed. When vcinteraction is NOT
+        // installed, we skip registration — no sculk/warden interaction.
+        if (TimeLoop.vcInteractionLoaded) {
+            DeferredRegister<GameEvent> gameEvents =
+                    DeferredRegister.create(Registries.GAME_EVENT, "timeloop");
+            gameEvents.register("voice", () -> new GameEvent(16));
+            gameEvents.register(modEventBus);
+        }
 
         TimeLoop.init();
 

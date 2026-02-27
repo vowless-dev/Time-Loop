@@ -9,6 +9,7 @@ import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
+import com.vltno.timeloop.compat.VoicechatInteractionCompat;
 import com.vltno.timeloop.voicechat.Bridge;
 import com.vltno.timeloop.voicechat.DummyBridge;
 import com.vltno.timeloop.voicechat.VoicechatBridge;
@@ -58,9 +59,15 @@ public class TimeLoop {
 	public static int tickCounter; // Tracks elapsed ticks
 	public static int ticksLeft;
 
+	// Whether mocap scene playback has been started for the current iteration.
+	// Reset on iteration advance and server start. Used to trigger playback
+	// when the first player joins mid-loop (e.g. after a server restart).
+	public static boolean playbackStartedThisIteration;
+
 	public static boolean showLoopInfo;
 	public static boolean displayTimeInTicks;
 	public static boolean trackItems;
+	public static int entityTrackingDistance;
 	public static LoopTypes loopType;
 	public static boolean trackChat;
 	public static boolean hurtLoopedPlayers;
@@ -68,8 +75,15 @@ public class TimeLoop {
 	public static boolean trackInventory;
 
     public static boolean voiceChatLoaded;
+    public static boolean vcInteractionLoaded;
 
     public static Bridge voiceBridge;
+
+    // Voice interaction settings (sculk / warden game events)
+    public static boolean voiceInteractionEnabled;
+    public static int voiceInteractionThresholdDb;
+    public static int voiceInteractionCooldownTicks;
+    public static float voiceAudioDistance;
 
 	// The configuration object loaded from disk
 	public static TimeLoopConfig config;
@@ -136,6 +150,7 @@ public class TimeLoop {
         }
 
         playerData.incrementActiveRecordingIndex();
+        playerData.nextSegment();
 
         playerData.addTempOffset(convertTicksToSeconds(tickCounter));
 
@@ -159,20 +174,22 @@ public class TimeLoop {
             return;
         }
 		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
+		// Save voice audio to disk before advancing the iteration
+		voiceBridge.saveAudio();
 		saveRecordings();
 		removeOldSceneEntries();
 		executeCommand("mocap playback stop_all including_others");
+		playbackStartedThisIteration = false;
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
         loopIteration++;
 
+		// Rewind active players (inventory, position) before starting playback
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
-			String playerNickname = playerData.getNickname();
-			Skin playerSkin = playerData.getSkin();
 			Vec3 startPosition = playerData.getStartPosition();
 			Vec3 joinPosition = playerData.getJoinPosition();
 			CompoundTag inventoryTag = playerData.getInventoryTag();
@@ -225,20 +242,10 @@ public class TimeLoop {
                 player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch, setCamera);
             }
             playerData.setLastDimensionKey(player.level().dimension());
-
-			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-
-            String skin_from = "skin_from_player";
-
-            switch (playerSkin.skinType) {
-                case MINESKIN -> skin_from = "skin_from_mineskin";
-                case FILE -> skin_from = "skin_from_file";
-            }
-
-            playerData.resetTotalFramesRecorded();
-            voiceBridge.onStartPlayback(playerData);
-			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
 		});
+
+		// Start mocap scene + voice playback for all players
+		startPlaybackForAllPlayers();
 
 		config.loopIteration = loopIteration;
 		config.save();
@@ -276,6 +283,7 @@ public class TimeLoop {
 		config.isLooping = true;
 		tickCounter = 0;
 		ticksLeft = loopLengthTicks;
+		playbackStartedThisIteration = false;
 		LOOP_LOGGER.info("Starting Loop");
 		startRecordings();
 	}
@@ -291,6 +299,7 @@ public class TimeLoop {
 			String playerName = playerData.getName();
             playerData.resetActiveRecordingIndex();
             playerData.resetTempOffsets();
+            playerData.resetSegments();
 			executeCommand(String.format("mocap recording start %s", playerName));
 		});
 	}
@@ -349,6 +358,14 @@ public class TimeLoop {
 		if (isLooping) {
 			LOOP_LOGGER.info("Stopping loop");
 
+			// Save voice audio to disk FIRST (synchronously!) before anything is torn down.
+			// saveAudio() saves ALL players regardless of active status.
+			try {
+				voiceBridge.saveAudio().get(10, java.util.concurrent.TimeUnit.SECONDS);
+			} catch (Exception e) {
+				LOOP_LOGGER.error("Voice audio save failed or timed out during stopLoop", e);
+			}
+
 			isLooping = false;
             config.isLooping = false;
 
@@ -363,8 +380,39 @@ public class TimeLoop {
 			loopSceneManager.saveRecordingPlayers();
 			executeCommand("mocap playback stop_all including_others");
             voiceBridge.stopPlayback("");
+			VoicechatInteractionCompat.clearCooldowns();
 			LOOP_LOGGER.info("Loop stopped!");
 		}
+	}
+
+	/**
+	 * Starts mocap scene playback and voice playback for all recording players
+	 * that have previous iterations. Called both at iteration boundaries and
+	 * when the first player joins mid-loop (e.g. after a server restart).
+	 */
+	public static void startPlaybackForAllPlayers() {
+		if (loopIteration <= 0) return; // Nothing to play back on iteration 0
+
+		LOOP_LOGGER.info("Starting playback for all players (iteration {})", loopIteration);
+
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			String playerName = playerData.getName();
+			String playerNickname = playerData.getNickname();
+			Skin playerSkin = playerData.getSkin();
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+
+			String skin_from = "skin_from_player";
+			switch (playerSkin.skinType) {
+				case MINESKIN -> skin_from = "skin_from_mineskin";
+				case FILE -> skin_from = "skin_from_file";
+			}
+
+			voiceBridge.onStartPlayback(playerData);
+			executeCommand(String.format("mocap playback start .%s '%s' %s %s",
+					playerSceneName, playerNickname, skin_from, playerSkin.value));
+		});
+
+		playbackStartedThisIteration = true;
 	}
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
@@ -377,16 +425,19 @@ public class TimeLoop {
 
 	/**
 	 * Updates the entities to be tracked for recording and playback settings.
-	 * This method modifies the entities being tracked based on the specified parameter,
-	 * enabling or disabling item tracking.
+	 * When items are enabled, also sets the entity tracking distance so items
+	 * are captured within a reasonable range. When disabled, resets distance to 1.
 	 *
-	 * @param items A boolean value. If true, includes items in the tracking list.
-	 *              If false, excludes items and tracks only vehicles.
+	 * @param items If true, includes items in the tracking list and uses the
+	 *              configured tracking distance. If false, excludes items and
+	 *              sets distance to 1 (minimum, just vehicles nearby).
 	 */
 	public static void updateEntitiesToTrack(boolean items) {
 		String entitiesToTrack = "@vehicles" + (items ? ";@items" : "");
+		int distance = items ? entityTrackingDistance : 1;
 		executeCommand(String.format("mocap settings recording track_entities %s", entitiesToTrack));
 		executeCommand(String.format("mocap settings playback play_entities %s", entitiesToTrack));
+		executeCommand(String.format("mocap settings recording entity_tracking_distance %d", distance));
 	}
 
 	public static void updateInfoBar(int time, int timeLeft) {

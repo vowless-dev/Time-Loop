@@ -102,10 +102,13 @@ public class BaseCommands {
 
         String extras = "Looping on " + loopTypeName + ".\n"
                 + ("Max loops is set to: " + ((TimeLoop.maxLoops == 0) ? TimeLoop.maxLoopsType.getSerializedName() + "\n" : TimeLoop.maxLoops + " [" + TimeLoop.maxLoopsType.getSerializedName() + "].\n"))
-                + (tracking.isEmpty() ? "" : tracking);
+                + (tracking.isEmpty() ? "" : tracking) + "\n";
+
+        String voice = "Simple Voice Chat: " + (TimeLoop.voiceChatLoaded ? "Installed" : "Not present") + ".\n"
+                + "Voice Chat Interaction: " + (TimeLoop.vcInteractionLoaded ? "Installed" : "Not present") + ".\n";
 
         String status = (TimeLoop.isLooping ?
-                "Loop is running.\n" : "Loop is not running.\n") + "Iteration: " + TimeLoop.loopIteration + ".\n" + extras;
+                "Loop is running.\n" : "Loop is not running.\n") + "Iteration: " + TimeLoop.loopIteration + ".\n" + extras + voice;
 
         source.sendSuccess(() -> Component.literal(status), false);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Status requested: {}", status);
