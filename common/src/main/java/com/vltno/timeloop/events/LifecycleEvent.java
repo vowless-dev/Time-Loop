@@ -81,6 +81,9 @@ public class LifecycleEvent {
             mc.setSetting("on_change_dimension", "split_recording");
             mc.setSetting("chat_recording", String.valueOf(TimeLoop.trackChat));
             mc.setSetting("invulnerable_playback", String.valueOf(!TimeLoop.hurtLoopedPlayers));
+            mc.setSetting("use_creative_game_mode", String.valueOf(!TimeLoop.hurtLoopedPlayers));
+            mc.setSetting("entity_tracking_distance", "1");
+            mc.setSetting("hit_range", "1");
 
             // updateEntitiesToTrack sets both the entity list AND the tracking distance
             TimeLoop.updateEntitiesToTrack(TimeLoop.trackItems);

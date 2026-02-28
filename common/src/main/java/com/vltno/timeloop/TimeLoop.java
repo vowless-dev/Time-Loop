@@ -150,8 +150,8 @@ public class TimeLoop {
 
         playerData.addTempOffset(convertTicksToSeconds(tickCounter));
 
-        LOOP_LOGGER.info("Player {} changed dimension to {}. New active recording index is now {}. Temp offsets are {}",
-                player.getName().getString(), currentDimension.location(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
+        LOOP_LOGGER.info("Player '{}' changed dimension. New active recording index is now {}. Temp offsets are {}",
+                player.getName().getString(), playerData.getActiveRecordingIndex(), playerData.getTempOffsets());
 
         // Update the player's state
         playerData.setLastDimensionKey(currentDimension);
@@ -420,7 +420,7 @@ public class TimeLoop {
 
 			// Build modifiers with player name and skin
 			MocapPlayerSkin mocapSkin = switch (playerSkin.skinType) {
-				case MINESKIN -> MocapPlayerSkin.fromMineskin(playerSkin.value);
+				case MINESKIN -> MocapPlayerSkin.fromMineSkin(playerSkin.value);
 				case FILE -> MocapPlayerSkin.fromFile(playerSkin.value);
 				default -> MocapPlayerSkin.fromPlayer(playerSkin.value);
 			};
@@ -436,8 +436,7 @@ public class TimeLoop {
 
 				// Collect all spawned entities for this player's nickname.
 				// Entities are already in the world from startPlayback() above.
-				var entities = com.vltno.timeloop.voicechat.VoicechatBridge
-						.findAllMocapEntities(playerNickname);
+				var entities = VoicechatBridge.findAllMocapEntities(playerNickname);
 				LOOP_LOGGER.info("Found {} mocap entities for '{}'", entities.size(), playerNickname);
 
 				// Start voice with pre-assigned entity list — no race condition

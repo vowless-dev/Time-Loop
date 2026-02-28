@@ -19,7 +19,7 @@ dependencies {
 
     mappings loom.layered {
         officialMojangMappings()
-        parchment("org.parchmentmc.data:parchment-${minecraft_version}:${parchment_version}@zip")
+        parchment("org.parchmentmc.data:parchment-${parchment_minecraft_version}:${parchment_version}@zip")
     }
 
     implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
