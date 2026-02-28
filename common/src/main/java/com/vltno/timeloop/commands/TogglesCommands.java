@@ -123,7 +123,9 @@ public class TogglesCommands {
         TimeLoop.config.trackChat = newTrackChat;
         TimeLoop.config.save();
 
-        TimeLoop.executeCommand("mocap settings recording chat_recording " + newTrackChat);
+        if (TimeLoop.mocapController != null) {
+            TimeLoop.mocapController.setSetting("chat_recording", String.valueOf(newTrackChat));
+        }
 
         source.sendSuccess(() -> Component.literal("Track chat is set to: " + newTrackChat), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Track chat set to {}", newTrackChat);
@@ -137,7 +139,9 @@ public class TogglesCommands {
         TimeLoop.config.hurtLoopedPlayers = newHurtLoopedPlayers;
         TimeLoop.config.save();
 
-        TimeLoop.executeCommand("mocap settings playback invulnerable_playback " + !newHurtLoopedPlayers);
+        if (TimeLoop.mocapController != null) {
+            TimeLoop.mocapController.setSetting("invulnerable_playback", String.valueOf(!newHurtLoopedPlayers));
+        }
 
         source.sendSuccess(() -> Component.literal("Hurt looped players is set to: " + newHurtLoopedPlayers), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Hurt looped players set to {}", newHurtLoopedPlayers);

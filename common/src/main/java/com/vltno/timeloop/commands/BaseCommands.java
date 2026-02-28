@@ -6,10 +6,12 @@ import com.vltno.timeloop.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.playing.playable.SceneFile;
+import net.mt1006.mocap.mocap.files.SceneFiles;
+import net.mt1006.mocap.mocap.playing.PlaybackManager;
 
 import java.util.List;
-
-import static net.minecraft.network.chat.ComponentUtils.formatList;
 
 public class BaseCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
@@ -118,11 +120,16 @@ public class BaseCommands {
     private static int reset(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         TimeLoop.stopLoop();
-        
-        TimeLoop.executeCommand("mocap playback stop_all");
+
+        // Stop all playbacks and clear + recreate scene files
+        PlaybackManager.stopAll(CommandOutput.DUMMY, null);
         TimeLoop.loopSceneManager.forEachPlayerSceneName(playerSceneName -> {
-            TimeLoop.executeCommand(String.format("mocap scenes remove %s", playerSceneName));
-            TimeLoop.executeCommand(String.format("mocap scenes add %s", playerSceneName));
+            SceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
+            if (sceneFile != null && sceneFile.exists()) {
+                sceneFile.clear(CommandOutput.LOGS);
+            } else {
+                SceneFiles.add(CommandOutput.LOGS, playerSceneName);
+            }
         });
         TimeLoop.loopSceneManager.forEachRecordingPlayer(PlayerData::resetActiveSubsceneIndex);
 

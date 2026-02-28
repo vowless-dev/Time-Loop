@@ -1,14 +1,16 @@
 package com.vltno.timeloop.voicechat;
 
 import com.vltno.timeloop.PlayerData;
+import net.minecraft.world.entity.Entity;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class DummyBridge implements Bridge {
     // Do nothing — SVC is not loaded
 
     @Override
-    public void onStartPlayback(PlayerData playerData) {}
+    public void onStartPlayback(PlayerData playerData, List<Entity> entities) {}
 
     @Override
     public void onTick() {}

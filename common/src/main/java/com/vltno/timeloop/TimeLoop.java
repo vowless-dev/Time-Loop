@@ -1,20 +1,14 @@
 package com.vltno.timeloop;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
+import com.vltno.timeloop.types.SkinTypes;
 import com.vltno.timeloop.compat.VoicechatInteractionCompat;
 import com.vltno.timeloop.voicechat.Bridge;
 import com.vltno.timeloop.voicechat.DummyBridge;
 import com.vltno.timeloop.voicechat.VoicechatBridge;
-import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -31,6 +25,22 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.mt1006.mocap.api.v1.MocapAPI;
+import net.mt1006.mocap.api.v1.controller.MocapController;
+import net.mt1006.mocap.api.v1.controller.config.MocapOnChangeDimension;
+import net.mt1006.mocap.api.v1.controller.config.MocapOnDeath;
+import net.mt1006.mocap.api.v1.controller.config.MocapRecordingConfig;
+import net.mt1006.mocap.api.v1.controller.playable.*;
+import net.mt1006.mocap.api.v1.io.CommandInfo;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.playing.playable.SceneFile;
+import net.mt1006.mocap.api.v1.modifiers.MocapModifiers;
+import net.mt1006.mocap.api.v1.modifiers.MocapPlayerSkin;
+import net.mt1006.mocap.api.v1.modifiers.MocapTime;
+import net.mt1006.mocap.api.v1.modifiers.MocapTimeModifiers;
+import net.mt1006.mocap.mocap.files.SceneData;
+import net.mt1006.mocap.mocap.files.SceneFiles;
+import net.mt1006.mocap.mocap.playing.PlaybackManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,13 +48,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class TimeLoop {
-    //TODO: Use mocap API
 	public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
 	public static MinecraftServer server;
 	public static ServerLevel serverLevel;
-	
+
+	// Mocap API controller — created on server start
+	public static MocapController mocapController;
+
+	// Per-player active recordings keyed by player name (for stop/save)
+	public static final Map<String, MocapActiveRecording> activeRecordings = new ConcurrentHashMap<>();
+
 	public static LoopBossBar loopBossBar;
 
 	// These fields will be initialized from the configuration file.
@@ -108,30 +124,10 @@ public class TimeLoop {
 	}
 
 	/**
-	 * Executes a minecraft chat command.
+	 * Returns the {@link CommandInfo} for the current server level from the mocap controller.
 	 */
-	public static void executeCommand(String command) {
-		if (server == null) {
-			LOOP_LOGGER.error("Attempted to execute command while server is null: {}", command);
-		}
-		
-		server.execute(() -> {
-			try {
-				Commands commands = server.getCommands();
-
-				CommandSourceStack commandSource = server.createCommandSourceStack();
-
-				LOOP_LOGGER.info("Executing command: {}", command);
-
-				commands.getDispatcher().execute(command, commandSource);
-
-				LOOP_LOGGER.info("Command executed successfully: {}", command);
-			} catch (CommandSyntaxException e) {
-				LOOP_LOGGER.error("Failed to execute command '{}' due to syntax error: {}", command, e.getMessage());
-			} catch (Exception e) {
-				LOOP_LOGGER.error("An unexpected error occurred while executing command '{}': {}", command, e.getMessage(), e);
-			}
-		});
+	public static CommandInfo getMocapCommandInfo() {
+		return mocapController.getCommandInfo();
 	}
 
     public static void handlePlayerDimensionChange(ServerPlayer player) {
@@ -178,7 +174,7 @@ public class TimeLoop {
 		voiceBridge.saveAudio();
 		saveRecordings();
 		removeOldSceneEntries();
-		executeCommand("mocap playback stop_all including_others");
+		PlaybackManager.stopAll(CommandOutput.DUMMY, null);
 		playbackStartedThisIteration = false;
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
@@ -289,66 +285,85 @@ public class TimeLoop {
 	}
 
 	/**
-	 * Starts the recordings.
+	 * Starts the recordings via the mocap API.
 	 */
 	public static void startRecordings() {
-		// Start recording for every player
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
-            playerData.resetActiveRecordingIndex();
-            playerData.resetTempOffsets();
-            playerData.resetSegments();
-			executeCommand(String.format("mocap recording start %s", playerName));
+			playerData.resetActiveRecordingIndex();
+			playerData.resetTempOffsets();
+			playerData.resetSegments();
+
+			ServerPlayer player = server.getPlayerList().getPlayerByName(playerName);
+			if (player == null) {
+				LOOP_LOGGER.warn("Cannot start recording for offline player: {}", playerName);
+				return;
+			}
+
+			MocapRecordingConfig recConfig = MocapRecordingConfig.createFromSettings();
+			MocapActiveRecording recording = mocapController.startRecording(player, recConfig, true);
+			if (recording != null) {
+				activeRecordings.put(playerName, recording);
+				LOOP_LOGGER.info("Started mocap recording for player: {}", playerName);
+			} else {
+				LOOP_LOGGER.error("Failed to start mocap recording for player: {}", playerName);
+			}
 		});
 	}
 
 	/**
-	 * Saves the recordings.
+	 * Saves the recordings via the mocap API.
 	 */
 	public static void saveRecordings() {
-        // Stop and save recordings for each player
-        loopSceneManager.forEachRecordingPlayer(playerData -> {
-            if (!playerData.getActive()) return;
+		CommandOutput out = CommandOutput.LOGS;
 
-            String playerName = playerData.getName();
-            String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			if (!playerData.getActive()) return;
 
-            int totalSegments = playerData.getActiveRecordingIndex();
-            int lastSegmentIndex = totalSegments;
+			String playerName = playerData.getName();
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-            // Iterate and save ALL active recording segments based on the index tracked in PlayerData.
-            for (int i = 1; i <= totalSegments; i++) {
-                String recordingToProcess = String.format("-+mc.%s.%d", playerName, i);
-                String recordingName = String.format("%s_loop%d_idx%d", playerName.toLowerCase(), loopIteration, i);
+			MocapActiveRecording activeRec = activeRecordings.remove(playerName);
+			if (activeRec == null || !activeRec.isValid()) {
+				LOOP_LOGGER.warn("No active mocap recording found for player: {}", playerName);
+				return;
+			}
 
-                LOOP_LOGGER.info("Processing active recording segment {} for player: {}", i, playerName);
+			// Stop the recording — this puts it into 'waiting for decision' state
+			activeRec.stop(out);
 
-                // If this is the currently recording segment, we must first STOP it.
-                // If it's an earlier segment, it's already in the 'waiting for decision' state
-                // (due to the dimension split), so a second 'stop' would DISCARD it.
-                if (i == lastSegmentIndex) {
-                    // Manually stop the currently active recording (e.g., -+mc.Dev.2 or -+mc.Dev.1 if no split)
-                    // This puts it into the 'waiting for decision' state.
-                    LOOP_LOGGER.info("Stopping final segment: {}", recordingToProcess);
-                    executeCommand(String.format("mocap recording stop %s", recordingToProcess));
-                } else {
-                    // If it's not the last segment, it's already in 'waiting for decision' from the split.
-                    LOOP_LOGGER.info("Segment {} assumed to be in 'waiting' state from dimension split.", i);
-                }
+			// Save to a named recording file
+			String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
+			MocapRecordingFile savedFile = activeRec.save(out, recordingName);
+			if (savedFile == null) {
+				LOOP_LOGGER.error("Failed to save mocap recording '{}' for player: {}", recordingName, playerName);
+				return;
+			}
+			LOOP_LOGGER.info("Saved mocap recording '{}' for player: {}", recordingName, playerName);
 
-                // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
-                executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
+			// Add the recording to the player's scene with a start_delay modifier
+			MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
+			if (sceneFile == null || !sceneFile.exists()) {
+				LOOP_LOGGER.error("Scene file '{}' not found for player: {}", playerSceneName, playerName);
+				return;
+			}
 
-                executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
+			float delaySeconds = playerData.getTempOffset(0);
+			MocapModifiers modifiers = MocapModifiers.empty();
+			if (delaySeconds > 0f) {
+				MocapTimeModifiers timeMods = modifiers.getTimeModifiers()
+						.withStartDelay(MocapTime.fromSeconds(delaySeconds));
+				modifiers = modifiers.withTimeModifiers(timeMods);
+			}
 
-                playerData.incrementActiveSubsceneIndex();
+			sceneFile.add(out, savedFile, modifiers);
+			playerData.incrementActiveSubsceneIndex();
 
-                String subsceneName = String.format("%03d-%s", playerData.getActiveSubsceneIndex(), recordingName);
-                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, subsceneName, playerData.getTempOffset(i - 1)));
-            }
-        });
+			LOOP_LOGGER.info("Added recording '{}' to scene '{}' with delay {}s",
+					recordingName, playerSceneName, delaySeconds);
+		});
 	}
 
 	/**
@@ -378,7 +393,7 @@ public class TimeLoop {
 			loopBossBar.visible(false);
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
-			executeCommand("mocap playback stop_all including_others");
+			PlaybackManager.stopAll(CommandOutput.DUMMY, null);
             voiceBridge.stopPlayback("");
 			VoicechatInteractionCompat.clearCooldowns();
 			LOOP_LOGGER.info("Loop stopped!");
@@ -395,21 +410,41 @@ public class TimeLoop {
 
 		LOOP_LOGGER.info("Starting playback for all players (iteration {})", loopIteration);
 
+		CommandInfo info = getMocapCommandInfo();
+
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			String playerName = playerData.getName();
 			String playerNickname = playerData.getNickname();
 			Skin playerSkin = playerData.getSkin();
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-			String skin_from = "skin_from_player";
-			switch (playerSkin.skinType) {
-				case MINESKIN -> skin_from = "skin_from_mineskin";
-				case FILE -> skin_from = "skin_from_file";
-			}
+			// Build modifiers with player name and skin
+			MocapPlayerSkin mocapSkin = switch (playerSkin.skinType) {
+				case MINESKIN -> MocapPlayerSkin.fromMineskin(playerSkin.value);
+				case FILE -> MocapPlayerSkin.fromFile(playerSkin.value);
+				default -> MocapPlayerSkin.fromPlayer(playerSkin.value);
+			};
+			MocapModifiers modifiers = MocapModifiers.playerName(playerNickname)
+					.withPlayerSkin(mocapSkin);
 
-			voiceBridge.onStartPlayback(playerData);
-			executeCommand(String.format("mocap playback start .%s '%s' %s %s",
-					playerSceneName, playerNickname, skin_from, playerSkin.value));
+			// Get the scene file and start playback
+			MocapSceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
+			if (sceneFile != null && sceneFile.exists()) {
+				// Start mocap scene FIRST — this spawns the FakePlayer entities synchronously
+				sceneFile.startPlayback(info, modifiers);
+				LOOP_LOGGER.info("Started mocap playback for scene '{}' as '{}'", playerSceneName, playerNickname);
+
+				// Collect all spawned entities for this player's nickname.
+				// Entities are already in the world from startPlayback() above.
+				var entities = com.vltno.timeloop.voicechat.VoicechatBridge
+						.findAllMocapEntities(playerNickname);
+				LOOP_LOGGER.info("Found {} mocap entities for '{}'", entities.size(), playerNickname);
+
+				// Start voice with pre-assigned entity list — no race condition
+				voiceBridge.onStartPlayback(playerData, entities);
+			} else {
+				LOOP_LOGGER.warn("Scene file '{}' not found, skipping playback for player: {}", playerSceneName, playerName);
+			}
 		});
 
 		playbackStartedThisIteration = true;
@@ -433,11 +468,12 @@ public class TimeLoop {
 	 *              sets distance to 1 (minimum, just vehicles nearby).
 	 */
 	public static void updateEntitiesToTrack(boolean items) {
+		if (mocapController == null) return;
 		String entitiesToTrack = "@vehicles" + (items ? ";@items" : "");
 		int distance = items ? entityTrackingDistance : 1;
-		executeCommand(String.format("mocap settings recording track_entities %s", entitiesToTrack));
-		executeCommand(String.format("mocap settings playback play_entities %s", entitiesToTrack));
-		executeCommand(String.format("mocap settings recording entity_tracking_distance %d", distance));
+		mocapController.setSetting("track_entities", entitiesToTrack);
+		mocapController.setSetting("play_entities", entitiesToTrack);
+		mocapController.setSetting("entity_tracking_distance", String.valueOf(distance));
 	}
 
 	public static void updateInfoBar(int time, int timeLeft) {
@@ -449,15 +485,19 @@ public class TimeLoop {
 		}
 	}
 
-    public static void removeRecording(String recording) {
-        try {
-            Path recordingPath = worldFolder.resolve("mocap_files").resolve("recordings").resolve(recording + ".mcmocap_rec");
-            Files.delete(recordingPath);
-            LOOP_LOGGER.info("Deleted recording at {}", recordingPath);
-        } catch (IOException e) {
-            LOOP_LOGGER.error("Error deleting recording {}", recording);
-        }
-    }
+	/**
+	 * Deletes a recording file directly from disk.
+	 * Mocap's own remove does not delete the file, so we do it ourselves.
+	 */
+	public static void removeRecording(String recording) {
+		try {
+			Path recordingPath = worldFolder.resolve("mocap_files").resolve("recordings").resolve(recording + ".mcmocap_rec");
+			Files.delete(recordingPath);
+			LOOP_LOGGER.info("Deleted recording file at {}", recordingPath);
+		} catch (IOException e) {
+			LOOP_LOGGER.error("Error deleting recording file '{}'", recording);
+		}
+	}
 
 	/**
 	 * Removes outdated entries from the scene file to ensure the number of subscenes does not exceed the maximum allowed loops.
@@ -465,65 +505,53 @@ public class TimeLoop {
 	 * it removes the oldest entries to maintain the desired number. The updated data is then saved back to the file.
 	 */
 	private static void removeOldSceneEntries() {
-		if (maxLoops >= 1 && (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST || maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) && (loopIteration + 1) > maxLoops) {
-			Path scenesDir = worldFolder.resolve("mocap_files").resolve("scenes");
+		if (maxLoops < 1) return;
+		if (maxLoopsType != MaxLoopsTypes.KEEP_NEWEST && maxLoopsType != MaxLoopsTypes.KEEP_NEWEST_DELETE) return;
+		if ((loopIteration + 1) <= maxLoops) return;
 
-			List<Path> sceneFiles = new ArrayList<>();
-			loopSceneManager.forEachRecordingPlayer(playerData -> {
-				String playerSceneName = loopSceneManager.getPlayerSceneName(playerData.getName());
-				if (playerSceneName != null && !playerSceneName.isBlank()) {
-					sceneFiles.add(scenesDir.resolve(playerSceneName + ".mcmocap_scene"));
-				} else {
-					LOOP_LOGGER.warn("Invalid playerSceneName encountered: {}", playerSceneName);
-				}
-			});
+		CommandOutput out = CommandOutput.LOGS;
+		int entriesToRemove = loopIteration - maxLoops;
 
-			if (sceneFiles.isEmpty()) {
-				LOOP_LOGGER.warn("No scene files found to process.");
-			}
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerData.getName());
+			if (playerSceneName == null || playerSceneName.isBlank()) return;
 
-			for (Path sceneFile : sceneFiles) {
-				if (sceneFile.toFile().exists()) {
-					try {
-						String jsonContent = new String(Files.readAllBytes(sceneFile));
-						JsonParser parser = new JsonParser();
-						JsonObject jsonObject = parser.parse(jsonContent).getAsJsonObject();
-						JsonArray subScenes = jsonObject.getAsJsonArray("subscenes");
+			MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
+			if (sceneFile == null || !sceneFile.exists()) return;
 
-						if (subScenes.size() > maxLoops) {
-							int entriesToRemove = loopIteration - maxLoops;
-							JsonArray newSubScenes = new JsonArray();
-                            for (int subsceneIndex = subScenes.size() - 1; subsceneIndex >= 0; subsceneIndex--) {
-                                JsonElement subScene = subScenes.get(subsceneIndex);
-                                String subSceneName = subScene.getAsJsonObject().get("name").getAsString();
-                                String[] subSceneNameSplit = subSceneName.split("_");
+			List<? extends MocapSceneElement> elements = sceneFile.getAll(out);
+			if (elements == null || elements.size() <= maxLoops) return;
 
-                                PlayerData playerData = loopSceneManager.getRecordingPlayer(subSceneNameSplit[0]);
-                                if (playerData != null) {
-                                    playerData.setActiveSubsceneIndex(maxLoops);
-
-                                    int _loopIteration = Integer.parseInt(subSceneNameSplit[subSceneNameSplit.length - 2].split("loop")[1]);
-
-                                    if (_loopIteration > entriesToRemove) {
-                                        newSubScenes.add(subScene);
-                                    } else if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE){
-                                        removeRecording(subSceneName);
-                                    }
-                                }
-                            }
-                            jsonObject.remove("subscenes");
-							jsonObject.add("subscenes", newSubScenes);
-							Files.write(sceneFile, jsonObject.toString().getBytes());
-							LOOP_LOGGER.info("Removed old scene entries for file: {}", sceneFile);
+			List<MocapSceneElement> toKeep = new ArrayList<>();
+			for (MocapSceneElement element : elements) {
+				String name = element.getName();
+				String[] parts = name.split("_");
+				try {
+					// Extract loop number from recording name like "player_loop5"
+					int elemLoop = -1;
+					for (String part : parts) {
+						if (part.startsWith("loop")) {
+							elemLoop = Integer.parseInt(part.substring(4));
+							break;
 						}
-					} catch (IOException e) {
-						LOOP_LOGGER.error("Failed to process scene file: {}", sceneFile, e);
 					}
-				} else {
-					LOOP_LOGGER.error("Scene file does not exist: {}", sceneFile);
+					if (elemLoop > entriesToRemove) {
+						toKeep.add(element);
+					} else {
+						if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) {
+							removeRecording(name);
+						}
+					}
+				} catch (NumberFormatException e) {
+					toKeep.add(element); // Keep entries we can't parse
 				}
 			}
-		}
+
+			playerData.setActiveSubsceneIndex(toKeep.size());
+			sceneFile.replaceAll(out, toKeep);
+			LOOP_LOGGER.info("Trimmed scene '{}': kept {} of {} entries",
+					playerSceneName, toKeep.size(), elements.size());
+		});
 	}
 
 	/**

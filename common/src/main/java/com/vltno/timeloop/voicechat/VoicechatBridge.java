@@ -14,21 +14,17 @@ public class VoicechatBridge implements Bridge {
     public static VoicechatServerApi serverApi;
     public static VolumeCategory LOOP_CATEGORY;
 
+    /** Active AudioPlayers keyed by "playerName|iter|seg|regionIndex". */
     private final Map<String, AudioPlayer> players = new ConcurrentHashMap<>();
     private final Map<String, EntityAudioChannel> entityChannels = new ConcurrentHashMap<>();
     private final Map<String, LocationalAudioChannel> locationalChannels = new ConcurrentHashMap<>();
 
     /**
-     * Decoded PCM buffers waiting for the mocap entity to appear.
-     * After the mocap playback command is issued, the FakePlayer entity may not
-     * exist for a few ticks. We queue the decoded audio here and check each
-     * tick in {@link #processPendingChannels()} until the entity is found.
+     * Scheduled speech regions waiting to be started at the right tick.
+     * Populated after decode completes; consumed by {@link #onTick()}.
      */
-    private final List<PendingChannel> pendingChannels =
+    private final List<ScheduledSpeechRegion> scheduledRegions =
             Collections.synchronizedList(new ArrayList<>());
-
-    /** Maximum ticks to wait for a mocap entity before falling back to locational audio. */
-    private static final int MAX_ENTITY_WAIT_TICKS = 40; // 2 seconds
 
     private final ExecutorService decodePool =
             Executors.newFixedThreadPool(Math.max(2,
@@ -46,42 +42,90 @@ public class VoicechatBridge implements Bridge {
 
     /* ───────────── PLAYBACK ───────────── */
 
-    public void onStartPlayback(PlayerData data) {
-        TimeLoop.LOOP_LOGGER.info("[Voice] onStartPlayback called for player {}", data.getName());
+    /**
+     * Starts voice playback for all previous iterations of the given player.
+     * <p>
+     * The caller must have already called {@code sceneFile.startPlayback()} so that
+     * the mocap FakePlayer entities are spawned. The {@code entities} list contains
+     * those entities in scene order (one per recording/scene-element). We match
+     * each non-empty audio iteration to its corresponding entity by index.
+     * <p>
+     * Decoded PCM is split into speech regions (contiguous non-silent sections).
+     * Each region is scheduled to start its own {@link AudioPlayer} at the
+     * appropriate tick so the SVC speaker icon only appears during actual speech.
+     *
+     * @param data     the player whose voice recordings should play
+     * @param entities pre-assigned mocap FakePlayer entities in scene order
+     */
+    @Override
+    public void onStartPlayback(PlayerData data, List<net.minecraft.world.entity.Entity> entities) {
+        TimeLoop.LOOP_LOGGER.info("[Voice] onStartPlayback called for player {} with {} entities",
+                data.getName(), entities.size());
 
         stopPlayback(data.getName());
 
         int currentIteration = TimeLoop.loopIteration;
 
-        // Capture the tick counter NOW — this is the reference point for the
-        // tick-gated audio player. The PCM buffer is tick-indexed from 0 (the
-        // start of the loop iteration), so we need to know what tickCounter
-        // corresponds to tick 0 of the iteration.
+        // Capture the tick counter NOW — this is the reference point for
+        // tick-gated scheduling. The PCM buffer is tick-indexed from 0 (the
+        // start of the loop iteration).
         final int iterationStartTick = TimeLoop.tickCounter;
 
-        // Play back audio from ALL previous iterations, not just the current one
+        // Build a deterministic mapping: audioIndex -> entity.
+        // audioIndex is the Nth iteration (in order 0..currentIteration-1) that
+        // has non-empty audio. The scene has one entity per recording, in the
+        // same order, so entity[audioIndex] is the correct match.
+        List<Integer> audioIterations = new ArrayList<>();
         for (int iter = 0; iter < currentIteration; iter++) {
-            Map<Integer, List<TimedAudioFrame>> iterAudio = data.getAudio(iter);
-            if (iterAudio.isEmpty()) continue;
+            if (!data.getAudio(iter).isEmpty()) {
+                audioIterations.add(iter);
+            }
+        }
 
-            final int capturedIter = iter;
+        for (int audioIdx = 0; audioIdx < audioIterations.size(); audioIdx++) {
+            final int iter = audioIterations.get(audioIdx);
+            // Assign entity by index; fall back to null if we have fewer entities
+            final net.minecraft.world.entity.Entity assignedEntity =
+                    (audioIdx < entities.size()) ? entities.get(audioIdx) : null;
+
+            Map<Integer, List<TimedAudioFrame>> iterAudio = data.getAudio(iter);
+            final int capturedAudioIdx = audioIdx;
+
             decodePool.execute(() -> {
                 iterAudio.forEach((segment, frames) -> {
                     if (frames.isEmpty()) {
                         TimeLoop.LOOP_LOGGER.warn(
                                 "[Voice] {} iter {} seg {} has NO frames",
-                                data.getName(), capturedIter, segment
+                                data.getName(), iter, segment
                         );
                         return;
                     }
 
-                    short[] pcm = decodeSegment(frames, data, capturedIter, segment);
+                    short[] pcm = decodeSegment(frames, data, iter, segment);
                     if (pcm == null || pcm.length == 0) return;
 
-                    // Schedule channel creation on the main server thread for thread safety
-                    TimeLoop.server.execute(() ->
-                            enqueueOrStartChannel(data, capturedIter, segment, pcm, iterationStartTick)
+                    // Extract speech regions from the decoded PCM
+                    List<SpeechRegion> regions = extractSpeechRegions(pcm);
+
+                    TimeLoop.LOOP_LOGGER.debug(
+                            "[Voice] {} speech regions for {} i{} s{}",
+                            regions.size(), data.getName(), iter, segment
                     );
+
+                    // Schedule each speech region to start at the right tick
+                    TimeLoop.server.execute(() -> {
+                        for (int ri = 0; ri < regions.size(); ri++) {
+                            SpeechRegion region = regions.get(ri);
+                            int startTick = region.startSample / SAMPLES_PER_TICK;
+                            String key = key(data.getName(), iter, segment) + "|" + ri;
+
+                            scheduledRegions.add(new ScheduledSpeechRegion(
+                                    key, data, iter, segment, ri,
+                                    region.pcm, assignedEntity,
+                                    iterationStartTick, startTick
+                            ));
+                        }
+                    });
                 });
             });
         }
@@ -138,9 +182,9 @@ public class VoicechatBridge implements Bridge {
                 framesPlaced++;
             }
 
-            TimeLoop.LOOP_LOGGER.info(
-                    "[Voice] Decoded {} / {} frames into {} sample buffer for {} i{} s{}",
-                    framesPlaced, frames.size(), pcm.length, data.getName(), iter, seg
+            TimeLoop.LOOP_LOGGER.debug(
+                    "[Voice] Decoded {}/{} frames for {} i{} s{}",
+                    framesPlaced, frames.size(), data.getName(), iter, seg
             );
 
             return pcm;
@@ -176,157 +220,134 @@ public class VoicechatBridge implements Bridge {
         }
     }
 
-    /* ───────────── CHANNEL START ───────────── */
+    /* ───────────── CONSTANTS ───────────── */
 
     // 48 kHz · 50 ms/tick = 2400 samples per tick
     private static final int SAMPLES_PER_TICK = 2400;
     // Each Opus frame = 20 ms = 960 samples
     private static final int FRAME_SIZE = 960;
-    // Allow audio to be this many ticks ahead of the server tick to avoid
-    // stutter from timing jitter between the audio thread and server thread.
-    private static final int TICK_LEAD = 2;
+    // Minimum consecutive silent frames to split speech regions
+    private static final int SILENCE_GAP_FRAMES = 5; // ~100ms
+
+    /* ───────────── SPEECH REGION EXTRACTION ───────────── */
+
+    /** A contiguous block of non-silent PCM audio and its position in the full buffer. */
+    private record SpeechRegion(int startSample, short[] pcm) {}
 
     /**
-     * Try to find the mocap FakePlayer entity and start an EntityAudioChannel.
-     * If the entity isn't in the world yet, queue as pending to retry each tick.
+     * Scans a full-duration PCM buffer and extracts contiguous speech regions.
+     * A speech region begins at the first non-silent frame and ends after
+     * {@link #SILENCE_GAP_FRAMES} consecutive silent frames.
      */
-    private void enqueueOrStartChannel(PlayerData data, int iter, int seg, short[] pcm,
-                                         int iterationStartTick) {
-        String nickname = data.getNickname();
-        net.minecraft.world.entity.Entity mcEntity = findMocapEntity(nickname);
+    private List<SpeechRegion> extractSpeechRegions(short[] fullPcm) {
+        List<SpeechRegion> regions = new ArrayList<>();
+        int regionStart = -1;
+        int silentCount = 0;
+        int lastNonSilentEnd = 0;
 
-        if (mcEntity != null) {
-            startEntityChannel(data, iter, seg, pcm, mcEntity, iterationStartTick);
-        } else {
-            // Entity not spawned yet — queue and retry each tick
-            TimeLoop.LOOP_LOGGER.info(
-                    "[Voice] Mocap entity '{}' not found yet, queuing audio for {} i{} s{}",
-                    nickname, data.getName(), iter, seg
-            );
-            pendingChannels.add(new PendingChannel(
-                    data, iter, seg, pcm, TimeLoop.tickCounter, iterationStartTick
-            ));
+        for (int i = 0; i + FRAME_SIZE <= fullPcm.length; i += FRAME_SIZE) {
+            boolean silent = true;
+            for (int j = i; j < i + FRAME_SIZE; j++) {
+                if (fullPcm[j] != 0) { silent = false; break; }
+            }
+
+            if (!silent) {
+                if (regionStart < 0) regionStart = i;
+                silentCount = 0;
+                lastNonSilentEnd = i + FRAME_SIZE;
+            } else if (regionStart >= 0) {
+                silentCount++;
+                if (silentCount >= SILENCE_GAP_FRAMES) {
+                    short[] regionPcm = new short[lastNonSilentEnd - regionStart];
+                    System.arraycopy(fullPcm, regionStart, regionPcm, 0, regionPcm.length);
+                    regions.add(new SpeechRegion(regionStart, regionPcm));
+                    regionStart = -1;
+                    silentCount = 0;
+                }
+            }
         }
+        // Flush trailing region
+        if (regionStart >= 0) {
+            short[] regionPcm = new short[lastNonSilentEnd - regionStart];
+            System.arraycopy(fullPcm, regionStart, regionPcm, 0, regionPcm.length);
+            regions.add(new SpeechRegion(regionStart, regionPcm));
+        }
+        return regions;
     }
 
-    /**
-     * Starts an {@link EntityAudioChannel} bound to the mocap FakePlayer entity.
-     * This makes the SVC speaker icon appear above the entity's head when it
-     * is playing back voice audio — just like a real player talking.
-     */
-    private void startEntityChannel(PlayerData data, int iter, int seg,
-                                    short[] pcm,
-                                    net.minecraft.world.entity.Entity mcEntity,
-                                    int iterationStartTick) {
-        String key = key(data.getName(), iter, seg);
+    /* ───────────── CHANNEL START ───────────── */
 
+    /**
+     * Starts an {@link EntityAudioChannel} for a single speech region.
+     * The AudioPlayer feeds only the region's PCM (no silence padding),
+     * so the SVC speaker icon only appears during actual speech.
+     */
+    private void startRegionEntityChannel(String key, short[] regionPcm,
+                                          net.minecraft.world.entity.Entity mcEntity) {
         de.maxhenkel.voicechat.api.Entity svcEntity = serverApi.fromEntity(mcEntity);
         EntityAudioChannel channel = serverApi.createEntityAudioChannel(
                 UUID.randomUUID(), svcEntity
         );
-
         if (channel == null) {
-            TimeLoop.LOOP_LOGGER.warn(
-                    "[Voice] Failed to create EntityAudioChannel for '{}', falling back to locational",
-                    data.getNickname()
-            );
-            startLocationalChannel(data, iter, seg, pcm, iterationStartTick);
+            TimeLoop.LOOP_LOGGER.warn("[Voice] Failed to create EntityAudioChannel for key={}", key);
             return;
         }
-
         channel.setCategory(LOOP_CATEGORY.getId());
-        float distance = getVoiceDistance();
-        channel.setDistance(distance);
+        channel.setDistance(getVoiceDistance());
 
-        AudioPlayer player = createTickGatedAudioPlayer(channel, pcm, iterationStartTick, mcEntity);
-
+        AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, mcEntity);
         entityChannels.put(key, channel);
         players.put(key, player);
-
         player.startPlaying();
-        TimeLoop.LOOP_LOGGER.info(
-                "[Voice] Started EntityAudioChannel for '{}' (key={}, distance={})",
-                data.getNickname(), key, distance
-        );
     }
 
     /**
-     * Fallback: starts a positional {@link LocationalAudioChannel} when no
-     * mocap entity could be found (e.g. entity never spawned within timeout).
+     * Fallback: starts a {@link LocationalAudioChannel} for a speech region
+     * when no entity is available.
      */
-    private void startLocationalChannel(PlayerData data, int iter, int seg,
-                                        short[] pcm, int iterationStartTick) {
-        String key = key(data.getName(), iter, seg);
-
+    private void startRegionLocationalChannel(String key, short[] regionPcm,
+                                              PlayerData data, int iter, int seg, int regionStartTick) {
         de.maxhenkel.voicechat.api.ServerLevel level =
                 serverApi.fromServerLevel(TimeLoop.serverLevel);
+        var pos = data.getPosition(iter, seg, regionStartTick);
+        double px = pos != null ? pos.x : 0, py = pos != null ? pos.y : 0, pz = pos != null ? pos.z : 0;
 
         LocationalAudioChannel channel = serverApi.createLocationalAudioChannel(
-                UUID.randomUUID(), level, serverApi.createPosition(0, 0, 0)
+                UUID.randomUUID(), level, serverApi.createPosition(px, py, pz)
         );
-
         channel.setCategory(LOOP_CATEGORY.getId());
-        float distance = getVoiceDistance();
-        channel.setDistance(distance);
+        channel.setDistance(getVoiceDistance());
 
-        AudioPlayer player = createTickGatedAudioPlayer(channel, pcm, iterationStartTick, null);
-
+        AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, null);
         locationalChannels.put(key, channel);
         players.put(key, player);
-
         player.startPlaying();
-        TimeLoop.LOOP_LOGGER.info(
-                "[Voice] Started LocationalAudioChannel (fallback) for '{}' (key={}, distance={})",
-                data.getName(), key, distance
-        );
     }
 
     /**
-     * Creates a tick-gated AudioPlayer that feeds PCM frames at a rate
-     * synchronized with server ticks. Used by both entity and locational channels.
-     * <p>
-     * The PCM buffer is indexed from tick 0 of the loop iteration, so
-     * {@code iterationStartTick} must be the tick counter value at the moment
-     * the current iteration began — NOT the current tick when this method is
-     * called. This ensures audio stays synchronised even if channel creation
-     * is delayed (e.g. waiting for the mocap entity to spawn).
+     * Creates a simple AudioPlayer that feeds PCM frames sequentially until
+     * exhausted. No tick-gating — the region is started at the right tick by
+     * {@link #onTick()}, and the AudioPlayer runs at its native rate.
      *
-     * @param channel            the SVC audio channel
-     * @param pcm                decoded PCM buffer for the full loop duration
-     * @param iterationStartTick tick counter at iteration start
-     * @param boundEntity        the mocap entity (for game event emission), or null for locational
+     * @param channel     the SVC audio channel
+     * @param regionPcm   trimmed PCM containing only the speech audio
+     * @param boundEntity the mocap entity (for game event emission), or null
      */
-    private AudioPlayer createTickGatedAudioPlayer(AudioChannel channel, short[] pcm,
-                                                   int iterationStartTick,
-                                                   net.minecraft.world.entity.Entity boundEntity) {
+    private AudioPlayer createSimpleAudioPlayer(AudioChannel channel, short[] regionPcm,
+                                                net.minecraft.world.entity.Entity boundEntity) {
         final int[] cursor = {0};
 
         return serverApi.createAudioPlayer(
                 channel,
                 serverApi.createEncoder(),
                 () -> {
-                    int elapsed = TimeLoop.tickCounter - iterationStartTick;
-                    int maxSample = (elapsed + TICK_LEAD) * SAMPLES_PER_TICK;
-
-                    if (cursor[0] + FRAME_SIZE > pcm.length) return null;
-
-                    // Feed silence when paused or caught up to tick limit
-                    if (cursor[0] >= maxSample) {
-                        return new short[FRAME_SIZE];
-                    }
+                    if (cursor[0] + FRAME_SIZE > regionPcm.length) return null; // done
 
                     short[] out = new short[FRAME_SIZE];
-                    System.arraycopy(pcm, cursor[0], out, 0, FRAME_SIZE);
+                    System.arraycopy(regionPcm, cursor[0], out, 0, FRAME_SIZE);
                     cursor[0] += FRAME_SIZE;
 
-                    // Emit game event from the replay entity when non-silent audio
-                    // is being played. This triggers sculk sensors / warden for
-                    // replay entities (vcinteraction only handles live
-                    // MicrophonePacketEvents, not our playback). Requires
-                    // vcinteraction to be installed (voiceEvent is null otherwise).
                     if (boundEntity != null && TimeLoop.voiceInteractionEnabled && !AudioUtils.isSilent(out)) {
-                        // Schedule on the server thread (this supplier runs on
-                        // the AudioPlayer thread)
                         TimeLoop.server.execute(() ->
                                 VoicechatInteractionCompat.emitIfLoudEnough(boundEntity, out)
                         );
@@ -339,66 +360,35 @@ public class VoicechatBridge implements Bridge {
 
     /* ───────────── TICK UPDATE ───────────── */
 
+    @Override
     public void onTick() {
-        // Process any pending channels waiting for their mocap entity to appear
-        processPendingChannels();
-
-        int tick = TimeLoop.tickCounter;
-
-        // Update locational channels (fallback) — entity channels move with the entity automatically
-        locationalChannels.forEach((key, channel) -> {
-            ParsedKey k = ParsedKey.parse(key);
-            PlayerData data =
-                    TimeLoop.loopSceneManager.getRecordingPlayer(k.player);
-
-            if (data == null) return;
-
-            var pos = data.getPosition(k.iter, k.segment, tick);
-            if (pos != null) {
-                channel.updateLocation(
-                        serverApi.createPosition(pos.x, pos.y, pos.z)
-                );
-            }
-        });
+        processScheduledRegions();
     }
 
     /**
-     * Processes pending channels: for each queued decoded PCM buffer, try to
-     * find the mocap FakePlayer entity. If found, start an EntityAudioChannel.
-     * If the wait exceeds {@link #MAX_ENTITY_WAIT_TICKS}, fall back to a
-     * LocationalAudioChannel so audio isn't lost.
+     * Each tick, checks scheduled speech regions and starts an AudioPlayer
+     * for any region whose start tick has arrived.
      */
-    private void processPendingChannels() {
-        if (pendingChannels.isEmpty()) return;
+    private void processScheduledRegions() {
+        if (scheduledRegions.isEmpty()) return;
 
-        List<PendingChannel> snapshot;
-        synchronized (pendingChannels) {
-            snapshot = new ArrayList<>(pendingChannels);
-            pendingChannels.clear();
+        int currentTick = TimeLoop.tickCounter;
+
+        List<ScheduledSpeechRegion> snapshot;
+        synchronized (scheduledRegions) {
+            snapshot = new ArrayList<>(scheduledRegions);
         }
 
-        for (PendingChannel pending : snapshot) {
-            net.minecraft.world.entity.Entity mcEntity =
-                    findMocapEntity(pending.data.getNickname());
-
-            if (mcEntity != null) {
-                startEntityChannel(
-                        pending.data, pending.iter, pending.seg,
-                        pending.pcm, mcEntity, pending.iterationStartTick
-                );
-            } else if (TimeLoop.tickCounter - pending.queuedAtTick >= MAX_ENTITY_WAIT_TICKS) {
-                TimeLoop.LOOP_LOGGER.warn(
-                        "[Voice] Timed out waiting for mocap entity '{}', using locational fallback for {} i{} s{}",
-                        pending.data.getNickname(), pending.data.getName(),
-                        pending.iter, pending.seg
-                );
-                startLocationalChannel(
-                        pending.data, pending.iter, pending.seg, pending.pcm,
-                        pending.iterationStartTick
-                );
-            } else {
-                // Still waiting — put it back
-                pendingChannels.add(pending);
+        for (ScheduledSpeechRegion region : snapshot) {
+            int elapsed = currentTick - region.iterationStartTick;
+            if (elapsed >= region.regionStartTick) {
+                scheduledRegions.remove(region);
+                if (region.entity != null) {
+                    startRegionEntityChannel(region.key, region.pcm, region.entity);
+                } else {
+                    startRegionLocationalChannel(region.key, region.pcm,
+                            region.data, region.iter, region.seg, region.regionStartTick);
+                }
             }
         }
     }
@@ -406,39 +396,32 @@ public class VoicechatBridge implements Bridge {
     /* ───────────── ENTITY LOOKUP ───────────── */
 
     /**
-     * Scans the server level for a mocap FakePlayer entity matching the given
-     * nickname. Mocap's FakePlayer extends ServerPlayer and is added to the
-     * level via {@code addNewPlayer()} — it does NOT carry the
-     * {@code "mocap_entity"} tag (that tag is only for spawned items/vehicles).
-     * <p>
-     * We identify it by finding a ServerPlayer whose GameProfile name matches
-     * the nickname but who is NOT a real connected player (i.e. not in the
-     * server's player list).
+     * Scans the server level for ALL mocap FakePlayer entities matching the
+     * given nickname, in iteration order. Called from
+     * {@link TimeLoop#startPlaybackForAllPlayers()} after the scene has been
+     * started so that all entities are already spawned.
      *
-     * @param nickname the display name of the mocap entity
-     * @return the matching entity, or {@code null} if not found
+     * @param nickname the display name of the mocap entities
+     * @return list of matching entities in iteration order (may be empty)
      */
-    private static net.minecraft.world.entity.Entity findMocapEntity(String nickname) {
-        if (TimeLoop.serverLevel == null || nickname == null || TimeLoop.server == null) return null;
+    public static List<net.minecraft.world.entity.Entity> findAllMocapEntities(String nickname) {
+        List<net.minecraft.world.entity.Entity> result = new ArrayList<>();
+        if (TimeLoop.serverLevel == null || nickname == null || TimeLoop.server == null) return result;
 
-        // Build a set of UUIDs of real connected players so we can exclude them
-        Set<java.util.UUID> realPlayerUUIDs = new HashSet<>();
+        Set<UUID> realPlayerUUIDs = new HashSet<>();
         for (net.minecraft.server.level.ServerPlayer sp : TimeLoop.server.getPlayerList().getPlayers()) {
             realPlayerUUIDs.add(sp.getUUID());
         }
 
         for (net.minecraft.world.entity.Entity entity : TimeLoop.serverLevel.getAllEntities()) {
-            // Mocap FakePlayer extends ServerPlayer
             if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                // Skip real connected players
                 if (realPlayerUUIDs.contains(serverPlayer.getUUID())) continue;
-                // Match by GameProfile name (the nickname passed to mocap playback)
                 if (nickname.equals(serverPlayer.getGameProfile().name())) {
-                    return entity;
+                    result.add(entity);
                 }
             }
         }
-        return null;
+        return result;
     }
 
     /* ───────────── PERSISTENCE ───────────── */
@@ -471,12 +454,11 @@ public class VoicechatBridge implements Bridge {
 
     public void stopPlayback(String player) {
         if (player == null || player.isEmpty()) {
-            // Stop ALL playback
             players.values().forEach(AudioPlayer::stopPlaying);
             players.clear();
             entityChannels.clear();
             locationalChannels.clear();
-            pendingChannels.clear();
+            scheduledRegions.clear();
             return;
         }
         players.forEach((k, p) -> {
@@ -485,7 +467,7 @@ public class VoicechatBridge implements Bridge {
         players.keySet().removeIf(k -> k.startsWith(player + "|"));
         entityChannels.keySet().removeIf(k -> k.startsWith(player + "|"));
         locationalChannels.keySet().removeIf(k -> k.startsWith(player + "|"));
-        pendingChannels.removeIf(p -> p.data.getName().equals(player));
+        scheduledRegions.removeIf(r -> r.data.getName().equals(player));
     }
 
     /* ───────────── KEY / HELPER TYPES ───────────── */
@@ -494,19 +476,12 @@ public class VoicechatBridge implements Bridge {
         return p + "|" + i + "|" + s;
     }
 
-    private record ParsedKey(String player, int iter, int segment) {
-        static ParsedKey parse(String k) {
-            String[] p = k.split("\\|");
-            return new ParsedKey(p[0],
-                    Integer.parseInt(p[1]),
-                    Integer.parseInt(p[2]));
-        }
-    }
-
     /**
-     * Holds decoded PCM audio that is waiting for its mocap entity to appear.
+     * A decoded speech region waiting to be started at the right tick.
      */
-    private record PendingChannel(PlayerData data, int iter, int seg,
-                                  short[] pcm, int queuedAtTick,
-                                  int iterationStartTick) {}
+    private record ScheduledSpeechRegion(
+            String key, PlayerData data, int iter, int seg, int regionIndex,
+            short[] pcm, net.minecraft.world.entity.Entity entity,
+            int iterationStartTick, int regionStartTick
+    ) {}
 }

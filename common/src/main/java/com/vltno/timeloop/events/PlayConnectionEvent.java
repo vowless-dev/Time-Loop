@@ -12,6 +12,11 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 
+import net.mt1006.mocap.api.v1.controller.config.MocapRecordingConfig;
+import net.mt1006.mocap.api.v1.controller.playable.MocapActiveRecording;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.files.SceneFiles;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 
@@ -34,7 +39,10 @@ public class PlayConnectionEvent {
             TimeLoop.loopBossBar.addPlayer(player);
         }
 
-        TimeLoop.executeCommand(String.format("mocap scenes add %s", TimeLoop.loopSceneManager.getPlayerSceneName(playerName)));
+        // Ensure the player's scene file exists (no-op if it already does)
+        if (TimeLoop.mocapController != null) {
+            SceneFiles.add(CommandOutput.LOGS, TimeLoop.loopSceneManager.getPlayerSceneName(playerName));
+        }
 
         if (TimeLoop.config != null && TimeLoop.config.firstStart) {
             TimeLoop.config.firstStart = false;
@@ -72,7 +80,15 @@ public class PlayConnectionEvent {
 
         if (TimeLoop.isLooping) {
             TimeLoop.LOOP_LOGGER.info("Starting recording for newly joined player: {}", playerName);
-            TimeLoop.executeCommand(String.format("mocap recording start %s", playerName));
+            if (TimeLoop.mocapController != null) {
+                MocapRecordingConfig recConfig = MocapRecordingConfig.createFromSettings();
+                MocapActiveRecording recording = TimeLoop.mocapController.startRecording(player, recConfig, true);
+                if (recording != null) {
+                    TimeLoop.activeRecordings.put(playerName, recording);
+                } else {
+                    TimeLoop.LOOP_LOGGER.error("Failed to start mocap recording for joining player: {}", playerName);
+                }
+            }
 
             // If playback hasn't been started yet this iteration (e.g. server restart
             // mid-loop, or singleplayer rejoin), start mocap + voice for ALL players now.
