@@ -48,6 +48,8 @@ public class LifecycleEvent {
         TimeLoop.voiceInteractionThresholdDb = TimeLoop.config.voiceInteractionThresholdDb;
         TimeLoop.voiceInteractionCooldownTicks = TimeLoop.config.voiceInteractionCooldownTicks;
         TimeLoop.voiceAudioDistance = TimeLoop.config.voiceAudioDistance;
+        TimeLoop.showPlayerVoiceIcon = TimeLoop.config.showPlayerVoiceIcon;
+        TimeLoop.trackVoice = TimeLoop.config.trackVoice;
 
         TimeLoop.loopSceneManager.setRecordingPlayers(TimeLoop.config.recordingPlayers);
 

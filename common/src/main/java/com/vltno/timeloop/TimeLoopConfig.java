@@ -49,6 +49,8 @@ public class TimeLoopConfig {
     public int voiceInteractionThresholdDb = -50; // dB; range -127 to 0
     public int voiceInteractionCooldownTicks = 20; // 1 second between game events per entity
     public float voiceAudioDistance = 48.0f; // SVC audio channel distance in blocks
+    public boolean showPlayerVoiceIcon = true; // Show SVC speaker icon above looped player entities
+    public boolean trackVoice = true; // Record voice chat audio during the loop
 
     /* ───────────── Player data ───────────── */
 

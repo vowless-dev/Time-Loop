@@ -26,6 +26,7 @@ public class TimeLoopVoicechatPlugin {
 
     private static void onMic(MicrophonePacketEvent event) {
         if (!TimeLoop.isLooping) return;
+        if (!TimeLoop.trackVoice) return;
         if (event.getSenderConnection() == null) return;
 
         byte[] opusData = event.getPacket().getOpusEncodedData();

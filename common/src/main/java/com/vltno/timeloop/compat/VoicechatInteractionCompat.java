@@ -48,14 +48,14 @@ public final class VoicechatInteractionCompat {
      * Resolves the {@link GameEvent} to use for replay-entity voice emission.
      * Must be called on server start, after registries are frozen.
      * <p>
-     * When vcinteraction is installed, looks up {@code vcinteraction:voice}
+     * When voiceinteraction is installed, looks up {@code vcinteraction:voice}
      * (which carries the correct sculk sensor frequency mapping). Falls back
      * to our own {@code timeloop:voice} if that lookup fails. When
      * vcinteraction is not installed, sets {@code voiceEvent} to {@code null}
      * so all emission is disabled.
      */
     public static void resolveGameEvent() {
-        if (!TimeLoop.vcInteractionLoaded) {
+        if (!TimeLoop.voiceInteractionLoaded) {
             voiceEvent = null;
             TimeLoop.LOOP_LOGGER.info("[Compat] voicechat-interaction not installed — voice game events disabled");
             return;

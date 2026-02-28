@@ -91,7 +91,7 @@ public class TimeLoop {
 	public static boolean trackInventory;
 
     public static boolean voiceChatLoaded;
-    public static boolean vcInteractionLoaded;
+    public static boolean voiceInteractionLoaded;
 
     public static Bridge voiceBridge;
 
@@ -100,6 +100,12 @@ public class TimeLoop {
     public static int voiceInteractionThresholdDb;
     public static int voiceInteractionCooldownTicks;
     public static float voiceAudioDistance;
+
+    // Whether to show the SVC speaker icon above looped player entities
+    public static boolean showPlayerVoiceIcon;
+
+    // Whether voice chat audio is recorded during the loop
+    public static boolean trackVoice;
 
 	// The configuration object loaded from disk
 	public static TimeLoopConfig config;

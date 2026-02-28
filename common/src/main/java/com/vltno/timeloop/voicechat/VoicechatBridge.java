@@ -302,15 +302,37 @@ public class VoicechatBridge implements Bridge {
     }
 
     /**
-     * Fallback: starts a {@link LocationalAudioChannel} for a speech region
-     * when no entity is available.
+     * Starts a {@link LocationalAudioChannel} for a speech region.
+     * Used as a fallback when no entity is available, or when
+     * {@link TimeLoop#showPlayerVoiceIcon} is {@code false} (to play audio
+     * at the entity's position without showing the SVC speaker icon).
+     *
+     * @param key             the unique key for this region
+     * @param regionPcm       trimmed PCM containing only the speech audio
+     * @param data            the player data (used for position lookup when entity is null)
+     * @param iter            the iteration index
+     * @param seg             the segment index
+     * @param regionStartTick the start tick of this region within the iteration
+     * @param boundEntity     the mocap entity (for position + game event emission), or null
      */
     private void startRegionLocationalChannel(String key, short[] regionPcm,
-                                              PlayerData data, int iter, int seg, int regionStartTick) {
+                                              PlayerData data, int iter, int seg,
+                                              int regionStartTick,
+                                              net.minecraft.world.entity.Entity boundEntity) {
         de.maxhenkel.voicechat.api.ServerLevel level =
                 serverApi.fromServerLevel(TimeLoop.serverLevel);
-        var pos = data.getPosition(iter, seg, regionStartTick);
-        double px = pos != null ? pos.x : 0, py = pos != null ? pos.y : 0, pz = pos != null ? pos.z : 0;
+
+        double px, py, pz;
+        if (boundEntity != null) {
+            px = boundEntity.getX();
+            py = boundEntity.getY();
+            pz = boundEntity.getZ();
+        } else {
+            var pos = data.getPosition(iter, seg, regionStartTick);
+            px = pos != null ? pos.x : 0;
+            py = pos != null ? pos.y : 0;
+            pz = pos != null ? pos.z : 0;
+        }
 
         LocationalAudioChannel channel = serverApi.createLocationalAudioChannel(
                 UUID.randomUUID(), level, serverApi.createPosition(px, py, pz)
@@ -318,7 +340,7 @@ public class VoicechatBridge implements Bridge {
         channel.setCategory(LOOP_CATEGORY.getId());
         channel.setDistance(getVoiceDistance());
 
-        AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, null);
+        AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, boundEntity);
         locationalChannels.put(key, channel);
         players.put(key, player);
         player.startPlaying();
@@ -383,11 +405,15 @@ public class VoicechatBridge implements Bridge {
             int elapsed = currentTick - region.iterationStartTick;
             if (elapsed >= region.regionStartTick) {
                 scheduledRegions.remove(region);
-                if (region.entity != null) {
+                if (region.entity != null && TimeLoop.showPlayerVoiceIcon) {
+                    // Entity channel — audio follows entity, speaker icon visible
                     startRegionEntityChannel(region.key, region.pcm, region.entity);
                 } else {
+                    // Locational channel — no speaker icon; positioned at entity
+                    // (or fallback position if entity is null)
                     startRegionLocationalChannel(region.key, region.pcm,
-                            region.data, region.iter, region.seg, region.regionStartTick);
+                            region.data, region.iter, region.seg,
+                            region.regionStartTick, region.entity);
                 }
             }
         }

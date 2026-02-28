@@ -107,7 +107,7 @@ public class BaseCommands {
                 + (tracking.isEmpty() ? "" : tracking) + "\n";
 
         String voice = "Simple Voice Chat: " + (TimeLoop.voiceChatLoaded ? "Installed" : "Not present") + ".\n"
-                + "Voice Chat Interaction: " + (TimeLoop.vcInteractionLoaded ? "Installed" : "Not present") + ".\n";
+                + "Voice Chat Interaction: " + (TimeLoop.voiceInteractionLoaded ? "Installed" : "Not present") + ".\n";
 
         String status = (TimeLoop.isLooping ?
                 "Loop is running.\n" : "Loop is not running.\n") + "Iteration: " + TimeLoop.loopIteration + ".\n" + extras + voice;

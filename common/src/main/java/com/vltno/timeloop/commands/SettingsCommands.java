@@ -269,20 +269,36 @@ public class SettingsCommands {
      * Registers the {@code /loop settings voice} category and its subcommands.
      * <p>
      * The category requires Simple Voice Chat to be installed.
-     * Subcommands have their own requirements (e.g. voiceInteraction requires
-     * voicechat-interaction). If SVC is installed but no subcommands are valid,
-     * the category is not registered at all.
+     * Individual subcommands may have additional requirements (e.g.
+     * voiceInteraction requires voicechat-interaction).
      */
     private static void registerVoiceCommands(LiteralArgumentBuilder<CommandSourceStack> settingsNode) {
         if (!TimeLoop.voiceChatLoaded) return;
 
-        // Track whether any subcommands were added
-        boolean hasSubcommands = false;
-
         LiteralArgumentBuilder<CommandSourceStack> voiceNode = Commands.literal("voice");
 
+        // trackVoice — enable/disable voice chat recording
+        voiceNode.then(Commands.literal("trackVoice")
+                .executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "Track voice is set to: " + TimeLoop.trackVoice), false);
+                    return 1;
+                })
+                .then(Commands.argument("value", BoolArgumentType.bool())
+                        .executes(SettingsCommands::trackVoice)));
+
+        // togglePlayerVoiceIcon — always available when SVC is loaded
+        voiceNode.then(Commands.literal("togglePlayerVoiceIcon")
+                .executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "Player voice icon is set to: " + TimeLoop.showPlayerVoiceIcon), false);
+                    return 1;
+                })
+                .then(Commands.argument("value", BoolArgumentType.bool())
+                        .executes(SettingsCommands::togglePlayerVoiceIcon)));
+
         // voiceInteraction toggle — requires voicechat-interaction
-        if (TimeLoop.vcInteractionLoaded) {
+        if (TimeLoop.voiceInteractionLoaded) {
             voiceNode.then(Commands.literal("voiceInteraction")
                     .executes(context -> {
                         context.getSource().sendSuccess(() -> Component.literal(
@@ -291,12 +307,33 @@ public class SettingsCommands {
                     })
                     .then(Commands.argument("value", BoolArgumentType.bool())
                             .executes(SettingsCommands::voiceInteraction)));
-            hasSubcommands = true;
         }
 
-        if (hasSubcommands) {
-            settingsNode.then(voiceNode);
-        }
+        settingsNode.then(voiceNode);
+    }
+
+    private static int trackVoice(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.trackVoice = newValue;
+        TimeLoop.config.trackVoice = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Track voice is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Track voice set to {}", newValue);
+        return 1;
+    }
+
+    private static int togglePlayerVoiceIcon(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.showPlayerVoiceIcon = newValue;
+        TimeLoop.config.showPlayerVoiceIcon = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Player voice icon is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Player voice icon set to {}", newValue);
+        return 1;
     }
 
     private static int voiceInteraction(CommandContext<CommandSourceStack> context) {
