@@ -1,7 +1,9 @@
 package com.vltno.timeloop.events;
 
+import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -26,14 +28,22 @@ public class PlayConnectionEvent {
         String playerName = player.getName().getString();
         HolderLookup.Provider provider = server.registryAccess();
 
-        try {
-            TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(true);
-        } catch (Exception e) {
+        com.vltno.timeloop.PlayerData existingData =
+                TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
+        if (existingData != null) {
+            existingData.setActive(true);
+        } else {
             TimeLoop.loopSceneManager.addPlayer(playerName, player.position());
+            existingData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
         }
 
-        CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
-        TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setInventoryTag(invTag);
+        // Only snapshot inventory when the loop is NOT running — during a loop,
+        // the saved inventory represents the start-of-loop state and must not be
+        // overwritten by a reconnecting player's current (potentially changed) inventory.
+        if (!TimeLoop.isLooping) {
+            CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
+            existingData.setInventoryTag(invTag);
+        }
 
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.addPlayer(player);
@@ -108,17 +118,22 @@ public class PlayConnectionEvent {
         ServerPlayer player = handler.player;
         String playerName = player.getName().getString();
 
-        if (TimeLoop.isLooping) {
-            // Save voice audio BEFORE marking inactive (so the save includes this player)
-            TimeLoop.voiceBridge.saveAudio();
-            TimeLoop.saveRecordings();
+        PlayerData playerData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
+
+        if (TimeLoop.isLooping && playerData != null && playerData.getActive()) {
+            // Save ONLY this player's voice audio and mocap recording — not everyone's.
+            // Must happen BEFORE marking inactive so the save includes this player.
+            VoicechatCompat.savePlayerAudio(playerData);
+            TimeLoop.saveRecordingForPlayer(playerData);
             TimeLoop.loopSceneManager.saveRecordingPlayers();
         }
 
         // Stop voice playback for the disconnecting player
-        TimeLoop.voiceBridge.stopPlayback(playerName);
+        VoicechatCompat.stopPlayback(playerName);
 
-        TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(false);
+        if (playerData != null) {
+            playerData.setActive(false);
+        }
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.removePlayer(player);
         }

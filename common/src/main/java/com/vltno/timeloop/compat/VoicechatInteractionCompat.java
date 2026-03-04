@@ -1,7 +1,7 @@
 package com.vltno.timeloop.compat;
 
 import com.vltno.timeloop.TimeLoop;
-import com.vltno.timeloop.voicechat.AudioUtils;
+import com.vltno.timeloop.compat.voicechat.AudioUtils;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -86,21 +86,18 @@ public final class VoicechatInteractionCompat {
     // ─── game event emission ───────────────────────────────────────────
 
     /**
-     * Emits the voice game event from the given entity if the audio is loud
-     * enough and the per-entity cooldown has elapsed.
+     * Emits the voice game event from the given entity if the per-entity
+     * cooldown has elapsed.
      * <p>
-     * Used for <b>replay entities</b> during mocap playback. The decoded PCM
-     * frames are checked against {@link TimeLoop#voiceInteractionThresholdDb},
-     * and a game event is emitted from the entity so sculk sensors / wardens
-     * react to the "talking" NPC.
+     * The caller is responsible for determining whether the audio is loud
+     * enough to warrant emission (e.g. via
+     * {@link AudioUtils#isAboveThreshold AudioUtils.isAboveThreshold()}).
+     * This method handles only cooldown enforcement and game event dispatch.
      *
-     * @param entity   the entity that is "speaking" (mocap FakePlayer)
-     * @param pcmFrame the current decoded 16-bit PCM audio frame (960 samples / 20 ms)
+     * @param entity the entity that is "speaking" (mocap FakePlayer)
      */
-    public static void emitIfLoudEnough(Entity entity, short[] pcmFrame) {
+    public static void emitVoiceEvent(Entity entity) {
         if (voiceEvent == null) return;
-        if (pcmFrame == null || pcmFrame.length == 0) return;
-        if (!AudioUtils.isAboveThreshold(pcmFrame, TimeLoop.voiceInteractionThresholdDb)) return;
         if (!(entity.level() instanceof ServerLevel level)) return;
 
         long gameTime = level.getGameTime();

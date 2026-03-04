@@ -1,34 +1,71 @@
-package com.vltno.timeloop.voicechat;
+package com.vltno.timeloop.compat;
 
 import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.TimeLoop;
-import com.vltno.timeloop.compat.VoicechatInteractionCompat;
+import com.vltno.timeloop.compat.voicechat.AudioPersistence;
+import com.vltno.timeloop.compat.voicechat.AudioUtils;
+import com.vltno.timeloop.compat.voicechat.TimedAudioFrame;
 import de.maxhenkel.voicechat.api.*;
 import de.maxhenkel.voicechat.api.audiochannel.*;
 import de.maxhenkel.voicechat.api.opus.OpusDecoder;
+import net.minecraft.server.level.ServerLevel;
 import java.util.*;
 import java.util.concurrent.*;
 
-public class VoicechatBridge implements Bridge {
+/**
+ * Integration with <a href="https://github.com/henkelmax/simple-voice-chat">Simple Voice Chat</a>
+ * for recording and playing back voice audio during time loops.
+ * <p>
+ * All methods are static and guard on {@link TimeLoop#voiceChatLoaded}. When SVC
+ * is not installed, every public method is a safe no-op.
+ * <p>
+ * Voice playback decodes Opus frames into PCM, extracts speech regions
+ * (contiguous non-silent sections), and schedules per-region
+ * {@link AudioPlayer AudioPlayers} so the SVC speaker icon only appears
+ * during actual speech.
+ */
+public final class VoicechatCompat {
+
+    private VoicechatCompat() {}
 
     public static VoicechatServerApi serverApi;
     public static VolumeCategory LOOP_CATEGORY;
 
     /** Active AudioPlayers keyed by "playerName|iter|seg|regionIndex". */
-    private final Map<String, AudioPlayer> players = new ConcurrentHashMap<>();
-    private final Map<String, EntityAudioChannel> entityChannels = new ConcurrentHashMap<>();
-    private final Map<String, LocationalAudioChannel> locationalChannels = new ConcurrentHashMap<>();
+    private static final Map<String, AudioPlayer> players = new ConcurrentHashMap<>();
 
     /**
      * Scheduled speech regions waiting to be started at the right tick.
      * Populated after decode completes; consumed by {@link #onTick()}.
      */
-    private final List<ScheduledSpeechRegion> scheduledRegions =
+    private static final List<ScheduledSpeechRegion> scheduledRegions =
             Collections.synchronizedList(new ArrayList<>());
 
-    private final ExecutorService decodePool =
-            Executors.newFixedThreadPool(Math.max(2,
-                    Runtime.getRuntime().availableProcessors() / 2));
+    private static volatile ExecutorService decodePool = createDecodePool();
+
+    private static ExecutorService createDecodePool() {
+        return Executors.newFixedThreadPool(Math.max(2,
+                Runtime.getRuntime().availableProcessors() / 2),
+                r -> {
+                    Thread t = new Thread(r, "TimeLoop-VoiceDecode");
+                    t.setDaemon(true);
+                    return t;
+                });
+    }
+
+    private static ExecutorService getDecodePool() {
+        ExecutorService pool = decodePool;
+        if (pool == null || pool.isShutdown()) {
+            synchronized (VoicechatCompat.class) {
+                pool = decodePool;
+                if (pool == null || pool.isShutdown()) {
+                    pool = createDecodePool();
+                    decodePool = pool;
+                }
+            }
+        }
+        return pool;
+    }
 
     /* ───────────── INIT ───────────── */
 
@@ -47,20 +84,33 @@ public class VoicechatBridge implements Bridge {
      * <p>
      * The caller must have already called {@code sceneFile.startPlayback()} so that
      * the mocap FakePlayer entities are spawned. The {@code entities} list contains
-     * those entities in scene order (one per recording/scene-element). We match
-     * each non-empty audio iteration to its corresponding entity by index.
+     * those entities <b>in scene order</b> (sorted by entity ID) — one per
+     * recording/scene-element. When a player changes dimension mid-iteration,
+     * mocap's split-recording creates multiple scene elements (and thus multiple
+     * entities) for that single iteration.
+     * <p>
+     * Voice audio is keyed by {@code (iteration, segment)}. Segment 0 is the initial
+     * recording; segment 1 is the first split (after a dimension change), etc.
+     * <p>
+     * The {@code sceneElementNames} list provides the definitive element ordering
+     * (e.g. ["dev_loop0", "dev_loop1", "dev_loop1_2", "dev_loop2"]). By counting
+     * how many elements share the same iteration number we know how many entities
+     * each iteration consumes, and we can assign the correct entity to each
+     * {@code (iteration, segment)} pair.
      * <p>
      * Decoded PCM is split into speech regions (contiguous non-silent sections).
      * Each region is scheduled to start its own {@link AudioPlayer} at the
      * appropriate tick so the SVC speaker icon only appears during actual speech.
      *
-     * @param data     the player whose voice recordings should play
-     * @param entities pre-assigned mocap FakePlayer entities in scene order
+     * @param data              the player whose voice recordings should play
+     * @param entities          pre-assigned mocap FakePlayer entities in scene order
+     * @param sceneElementNames ordered list of scene element names
      */
-    @Override
-    public void onStartPlayback(PlayerData data, List<net.minecraft.world.entity.Entity> entities) {
-        TimeLoop.LOOP_LOGGER.info("[Voice] onStartPlayback called for player {} with {} entities",
-                data.getName(), entities.size());
+    public static void onStartPlayback(PlayerData data, List<net.minecraft.world.entity.Entity> entities,
+                                List<String> sceneElementNames) {
+        if (!TimeLoop.voiceChatLoaded) return;
+        TimeLoop.LOOP_LOGGER.info("[Voice] onStartPlayback called for player {} with {} entities, {} scene elements",
+                data.getName(), entities.size(), sceneElementNames.size());
 
         stopPlayback(data.getName());
 
@@ -71,64 +121,116 @@ public class VoicechatBridge implements Bridge {
         // start of the loop iteration).
         final int iterationStartTick = TimeLoop.tickCounter;
 
-        // Build a deterministic mapping: audioIndex -> entity.
-        // audioIndex is the Nth iteration (in order 0..currentIteration-1) that
-        // has non-empty audio. The scene has one entity per recording, in the
-        // same order, so entity[audioIndex] is the correct match.
-        List<Integer> audioIterations = new ArrayList<>();
-        for (int iter = 0; iter < currentIteration; iter++) {
-            if (!data.getAudio(iter).isEmpty()) {
-                audioIterations.add(iter);
+        // Build a per-iteration element count from scene element names.
+        // Names follow the pattern: "name_loopN" (primary) or "name_loopN_S" (split).
+        // Elements for the same iteration have the same loopN part.
+        // We count consecutive elements sharing an iteration to determine how many
+        // entities that iteration consumes.
+        //
+        // Example: ["dev_loop0", "dev_loop1", "dev_loop1_2", "dev_loop2"]
+        //   → iter 0: 1 element, iter 1: 2 elements, iter 2: 1 element
+        List<Integer> elementsPerIteration = new ArrayList<>();
+        {
+            int idx = 0;
+            while (idx < sceneElementNames.size()) {
+                String name = sceneElementNames.get(idx);
+                int loopNum = parseLoopNumber(name);
+                int count = 1;
+                // Count subsequent elements with the same loop number
+                while (idx + count < sceneElementNames.size()
+                        && parseLoopNumber(sceneElementNames.get(idx + count)) == loopNum) {
+                    count++;
+                }
+                elementsPerIteration.add(count);
+                idx += count;
             }
         }
 
-        for (int audioIdx = 0; audioIdx < audioIterations.size(); audioIdx++) {
-            final int iter = audioIterations.get(audioIdx);
-            // Assign entity by index; fall back to null if we have fewer entities
-            final net.minecraft.world.entity.Entity assignedEntity =
-                    (audioIdx < entities.size()) ? entities.get(audioIdx) : null;
+        TimeLoop.LOOP_LOGGER.debug("[Voice] Elements per iteration: {}", elementsPerIteration);
 
+        // Walk the entities list, assigning each (iter, segment) to its entity.
+        // entityIndex tracks the running position.
+        record SegmentEntity(int iter, int seg, net.minecraft.world.entity.Entity entity) {}
+        List<SegmentEntity> segmentEntities = new ArrayList<>();
+        int entityIndex = 0;
+
+        for (int iter = 0; iter < elementsPerIteration.size() && iter < currentIteration; iter++) {
+            int elemCount = elementsPerIteration.get(iter);
             Map<Integer, List<TimedAudioFrame>> iterAudio = data.getAudio(iter);
-            final int capturedAudioIdx = audioIdx;
 
-            decodePool.execute(() -> {
-                iterAudio.forEach((segment, frames) -> {
-                    if (frames.isEmpty()) {
-                        TimeLoop.LOOP_LOGGER.warn(
-                                "[Voice] {} iter {} seg {} has NO frames",
-                                data.getName(), iter, segment
-                        );
-                        return;
+            for (int s = 0; s < elemCount; s++) {
+                net.minecraft.world.entity.Entity entity =
+                        (entityIndex < entities.size()) ? entities.get(entityIndex) : null;
+                // Map this segment to its entity if we have audio for it
+                if (iterAudio.containsKey(s)) {
+                    segmentEntities.add(new SegmentEntity(iter, s, entity));
+                }
+                entityIndex++;
+            }
+        }
+
+        TimeLoop.LOOP_LOGGER.debug(
+                "[Voice] Built {} segment-entity mappings for {} ({} entities, entityIndex={})",
+                segmentEntities.size(), data.getName(), entities.size(), entityIndex
+        );
+
+        // Now decode and schedule each segment with its correct entity
+        for (SegmentEntity se : segmentEntities) {
+            final int iter = se.iter;
+            final int seg = se.seg;
+            final net.minecraft.world.entity.Entity assignedEntity = se.entity;
+
+            List<TimedAudioFrame> frames = data.getAudio(iter).get(seg);
+            if (frames == null || frames.isEmpty()) continue;
+
+            getDecodePool().execute(() -> {
+                short[] pcm = decodeSegment(frames, data, iter, seg);
+                if (pcm == null || pcm.length == 0) return;
+
+                // Extract speech regions from the decoded PCM
+                List<SpeechRegion> regions = extractSpeechRegions(pcm);
+
+                TimeLoop.LOOP_LOGGER.debug(
+                        "[Voice] {} speech regions for {} i{} s{} -> entity {}",
+                        regions.size(), data.getName(), iter, seg,
+                        assignedEntity != null ? assignedEntity.level().dimension().location() : "null"
+                );
+
+                // Schedule each speech region to start at the right tick
+                TimeLoop.server.execute(() -> {
+                    for (int ri = 0; ri < regions.size(); ri++) {
+                        SpeechRegion region = regions.get(ri);
+                        int startTick = region.startSample / SAMPLES_PER_TICK;
+                        String key = key(data.getName(), iter, seg) + "|" + ri;
+
+                        scheduledRegions.add(new ScheduledSpeechRegion(
+                                key, data, iter, seg, ri,
+                                region.pcm, assignedEntity,
+                                iterationStartTick, startTick
+                        ));
                     }
-
-                    short[] pcm = decodeSegment(frames, data, iter, segment);
-                    if (pcm == null || pcm.length == 0) return;
-
-                    // Extract speech regions from the decoded PCM
-                    List<SpeechRegion> regions = extractSpeechRegions(pcm);
-
-                    TimeLoop.LOOP_LOGGER.debug(
-                            "[Voice] {} speech regions for {} i{} s{}",
-                            regions.size(), data.getName(), iter, segment
-                    );
-
-                    // Schedule each speech region to start at the right tick
-                    TimeLoop.server.execute(() -> {
-                        for (int ri = 0; ri < regions.size(); ri++) {
-                            SpeechRegion region = regions.get(ri);
-                            int startTick = region.startSample / SAMPLES_PER_TICK;
-                            String key = key(data.getName(), iter, segment) + "|" + ri;
-
-                            scheduledRegions.add(new ScheduledSpeechRegion(
-                                    key, data, iter, segment, ri,
-                                    region.pcm, assignedEntity,
-                                    iterationStartTick, startTick
-                            ));
-                        }
-                    });
                 });
             });
         }
+    }
+
+    /**
+     * Extracts the loop iteration number from a scene element name.
+     * Names follow the pattern "name_loopN" or "name_loopN_S".
+     * Returns -1 if the name cannot be parsed.
+     */
+    private static int parseLoopNumber(String elementName) {
+        String[] parts = elementName.split("_");
+        for (String part : parts) {
+            if (part.startsWith("loop")) {
+                try {
+                    return Integer.parseInt(part.substring(4));
+                } catch (NumberFormatException e) {
+                    return -1;
+                }
+            }
+        }
+        return -1;
     }
 
     /* ───────────── DECODING ───────────── */
@@ -145,7 +247,7 @@ public class VoicechatBridge implements Bridge {
      * <p>
      * Gaps between speech bursts remain as zero-filled silence.
      */
-    private short[] decodeSegment(List<TimedAudioFrame> frames,
+    private static short[] decodeSegment(List<TimedAudioFrame> frames,
                                   PlayerData data,
                                   int iter,
                                   int seg) {
@@ -239,7 +341,7 @@ public class VoicechatBridge implements Bridge {
      * A speech region begins at the first non-silent frame and ends after
      * {@link #SILENCE_GAP_FRAMES} consecutive silent frames.
      */
-    private List<SpeechRegion> extractSpeechRegions(short[] fullPcm) {
+    private static List<SpeechRegion> extractSpeechRegions(short[] fullPcm) {
         List<SpeechRegion> regions = new ArrayList<>();
         int regionStart = -1;
         int silentCount = 0;
@@ -282,7 +384,7 @@ public class VoicechatBridge implements Bridge {
      * The AudioPlayer feeds only the region's PCM (no silence padding),
      * so the SVC speaker icon only appears during actual speech.
      */
-    private void startRegionEntityChannel(String key, short[] regionPcm,
+    private static void startRegionEntityChannel(String key, short[] regionPcm,
                                           net.minecraft.world.entity.Entity mcEntity) {
         de.maxhenkel.voicechat.api.Entity svcEntity = serverApi.fromEntity(mcEntity);
         EntityAudioChannel channel = serverApi.createEntityAudioChannel(
@@ -296,7 +398,6 @@ public class VoicechatBridge implements Bridge {
         channel.setDistance(getVoiceDistance());
 
         AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, mcEntity);
-        entityChannels.put(key, channel);
         players.put(key, player);
         player.startPlaying();
     }
@@ -315,12 +416,17 @@ public class VoicechatBridge implements Bridge {
      * @param regionStartTick the start tick of this region within the iteration
      * @param boundEntity     the mocap entity (for position + game event emission), or null
      */
-    private void startRegionLocationalChannel(String key, short[] regionPcm,
+    private static void startRegionLocationalChannel(String key, short[] regionPcm,
                                               PlayerData data, int iter, int seg,
                                               int regionStartTick,
                                               net.minecraft.world.entity.Entity boundEntity) {
+        // Resolve the level from the bound entity's dimension (it may be in the
+        // Nether/End if the recording was split across dimensions). Fall back to
+        // the overworld if no entity is available.
+        ServerLevel mcLevel = (boundEntity != null && boundEntity.level() instanceof ServerLevel sl)
+                ? sl : TimeLoop.serverLevel;
         de.maxhenkel.voicechat.api.ServerLevel level =
-                serverApi.fromServerLevel(TimeLoop.serverLevel);
+                serverApi.fromServerLevel(mcLevel);
 
         double px, py, pz;
         if (boundEntity != null) {
@@ -341,7 +447,6 @@ public class VoicechatBridge implements Bridge {
         channel.setDistance(getVoiceDistance());
 
         AudioPlayer player = createSimpleAudioPlayer(channel, regionPcm, boundEntity);
-        locationalChannels.put(key, channel);
         players.put(key, player);
         player.startPlaying();
     }
@@ -355,7 +460,7 @@ public class VoicechatBridge implements Bridge {
      * @param regionPcm   trimmed PCM containing only the speech audio
      * @param boundEntity the mocap entity (for game event emission), or null
      */
-    private AudioPlayer createSimpleAudioPlayer(AudioChannel channel, short[] regionPcm,
+    private static AudioPlayer createSimpleAudioPlayer(AudioChannel channel, short[] regionPcm,
                                                 net.minecraft.world.entity.Entity boundEntity) {
         final int[] cursor = {0};
 
@@ -369,9 +474,10 @@ public class VoicechatBridge implements Bridge {
                     System.arraycopy(regionPcm, cursor[0], out, 0, FRAME_SIZE);
                     cursor[0] += FRAME_SIZE;
 
-                    if (boundEntity != null && TimeLoop.voiceInteractionEnabled && !AudioUtils.isSilent(out)) {
+                    if (boundEntity != null && TimeLoop.voiceInteractionEnabled
+                            && AudioUtils.isAboveThreshold(out, TimeLoop.voiceInteractionThresholdDb)) {
                         TimeLoop.server.execute(() ->
-                                VoicechatInteractionCompat.emitIfLoudEnough(boundEntity, out)
+                                VoicechatInteractionCompat.emitVoiceEvent(boundEntity)
                         );
                     }
 
@@ -382,8 +488,12 @@ public class VoicechatBridge implements Bridge {
 
     /* ───────────── TICK UPDATE ───────────── */
 
-    @Override
-    public void onTick() {
+    /**
+     * Processes scheduled speech regions. Call once per server tick while looping.
+     * No-op when SVC is not loaded.
+     */
+    public static void onTick() {
+        if (!TimeLoop.voiceChatLoaded) return;
         processScheduledRegions();
     }
 
@@ -391,7 +501,7 @@ public class VoicechatBridge implements Bridge {
      * Each tick, checks scheduled speech regions and starts an AudioPlayer
      * for any region whose start tick has arrived.
      */
-    private void processScheduledRegions() {
+    private static void processScheduledRegions() {
         if (scheduledRegions.isEmpty()) return;
 
         int currentTick = TimeLoop.tickCounter;
@@ -422,68 +532,114 @@ public class VoicechatBridge implements Bridge {
     /* ───────────── ENTITY LOOKUP ───────────── */
 
     /**
-     * Scans the server level for ALL mocap FakePlayer entities matching the
-     * given nickname, in iteration order. Called from
-     * {@link TimeLoop#startPlaybackForAllPlayers()} after the scene has been
-     * started so that all entities are already spawned.
+     * Scans <b>all loaded server levels</b> for mocap FakePlayer entities matching
+     * the given nickname. When dimension-split recordings are used, mocap spawns
+     * FakePlayer entities in the dimension the recording was made in (e.g. Nether,
+     * End), so scanning only the overworld would miss them.
+     * <p>
+     * The returned list is sorted by <b>entity ID</b> to guarantee scene order.
+     * Mocap creates entities sequentially during {@code ScenePlayback.start()},
+     * iterating scene elements in order. Each call to {@code level.addNewPlayer()}
+     * assigns an incrementing entity ID, so sorting by ID recovers the scene
+     * element order even when entities are spread across multiple dimensions.
+     * <p>
+     * Called from {@link TimeLoop#startPlaybackForAllPlayers()} after the scene
+     * has been started so that all entities are already spawned.
      *
      * @param nickname the display name of the mocap entities
-     * @return list of matching entities in iteration order (may be empty)
+     * @return list of matching entities in scene order (may be empty)
      */
     public static List<net.minecraft.world.entity.Entity> findAllMocapEntities(String nickname) {
         List<net.minecraft.world.entity.Entity> result = new ArrayList<>();
-        if (TimeLoop.serverLevel == null || nickname == null || TimeLoop.server == null) return result;
+        if (nickname == null || TimeLoop.server == null) return result;
 
         Set<UUID> realPlayerUUIDs = new HashSet<>();
         for (net.minecraft.server.level.ServerPlayer sp : TimeLoop.server.getPlayerList().getPlayers()) {
             realPlayerUUIDs.add(sp.getUUID());
         }
 
-        for (net.minecraft.world.entity.Entity entity : TimeLoop.serverLevel.getAllEntities()) {
-            if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-                if (realPlayerUUIDs.contains(serverPlayer.getUUID())) continue;
-                if (nickname.equals(serverPlayer.getGameProfile().name())) {
-                    result.add(entity);
+        // Scan ALL dimensions — mocap spawns FakePlayer entities in the dimension
+        // the recording was made in (assigned via dimensionId in RecordingData).
+        for (ServerLevel level : TimeLoop.server.getAllLevels()) {
+            for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
+                if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                    if (realPlayerUUIDs.contains(serverPlayer.getUUID())) continue;
+                    if (nickname.equals(serverPlayer.getGameProfile().name())) {
+                        result.add(entity);
+                    }
                 }
             }
         }
+
+        // Sort by entity ID to recover scene-element order. Mocap creates
+        // FakePlayer entities sequentially, so lower ID = earlier scene element.
+        result.sort(Comparator.comparingInt(net.minecraft.world.entity.Entity::getId));
+
         return result;
     }
 
     /* ───────────── PERSISTENCE ───────────── */
 
-    @Override
-    public CompletableFuture<Void> saveAudio() {
+    /** Saves all voice data to disk. No-op when SVC is not loaded. */
+    public static CompletableFuture<Void> saveAudio() {
+        if (!TimeLoop.voiceChatLoaded) return CompletableFuture.completedFuture(null);
         TimeLoop.LOOP_LOGGER.info("[Voice] Saving all audio to disk...");
         return AudioPersistence.saveAllAudio().thenRun(() ->
                 TimeLoop.LOOP_LOGGER.info("[Voice] Audio save complete.")
         );
     }
 
-    @Override
-    public CompletableFuture<Void> loadAudio() {
+    /** Saves voice data for a single player to disk. No-op when SVC is not loaded. */
+    public static CompletableFuture<Void> savePlayerAudio(PlayerData playerData) {
+        if (!TimeLoop.voiceChatLoaded) return CompletableFuture.completedFuture(null);
+        TimeLoop.LOOP_LOGGER.info("[Voice] Saving audio for player {}...", playerData.getName());
+        return AudioPersistence.savePlayerAudio(playerData).thenRun(() ->
+                TimeLoop.LOOP_LOGGER.info("[Voice] Audio save complete for {}.", playerData.getName())
+        );
+    }
+
+    /** Loads all voice data from disk into memory. No-op when SVC is not loaded. */
+    public static CompletableFuture<Void> loadAudio() {
+        if (!TimeLoop.voiceChatLoaded) return CompletableFuture.completedFuture(null);
         TimeLoop.LOOP_LOGGER.info("[Voice] Loading audio from disk...");
         return AudioPersistence.loadAllAudio().thenRun(() ->
                 TimeLoop.LOOP_LOGGER.info("[Voice] Audio load complete.")
         );
     }
 
-    @Override
-    public void shutdown() {
+    /**
+     * Deletes all voice audio from disk and clears in-memory audio for all players.
+     * No-op when SVC is not loaded.
+     */
+    public static CompletableFuture<Void> deleteAllAudio() {
+        if (!TimeLoop.voiceChatLoaded) return CompletableFuture.completedFuture(null);
+        TimeLoop.LOOP_LOGGER.info("[Voice] Deleting all voice audio...");
+        return AudioPersistence.deleteAllAudio().thenRun(() ->
+                TimeLoop.LOOP_LOGGER.info("[Voice] All voice audio deleted.")
+        );
+    }
+
+    /** Cleans up thread pools and resources. Call on server stop. No-op when SVC is not loaded. */
+    public static void shutdown() {
+        if (!TimeLoop.voiceChatLoaded) return;
         stopPlayback(null);
-        decodePool.shutdown();
+        ExecutorService pool = decodePool;
+        if (pool != null) pool.shutdown();
         AudioPersistence.shutdown();
-        TimeLoop.LOOP_LOGGER.info("[Voice] VoicechatBridge shut down.");
+        TimeLoop.LOOP_LOGGER.info("[Voice] VoicechatCompat shut down.");
     }
 
     /* ───────────── STOP ───────────── */
 
-    public void stopPlayback(String player) {
+    /**
+     * Stops voice playback for the given player, or all playback if
+     * {@code player} is {@code null} or empty. No-op when SVC is not loaded.
+     */
+    public static void stopPlayback(String player) {
+        if (!TimeLoop.voiceChatLoaded) return;
         if (player == null || player.isEmpty()) {
             players.values().forEach(AudioPlayer::stopPlaying);
             players.clear();
-            entityChannels.clear();
-            locationalChannels.clear();
             scheduledRegions.clear();
             return;
         }
@@ -491,8 +647,6 @@ public class VoicechatBridge implements Bridge {
             if (k.startsWith(player + "|")) p.stopPlaying();
         });
         players.keySet().removeIf(k -> k.startsWith(player + "|"));
-        entityChannels.keySet().removeIf(k -> k.startsWith(player + "|"));
-        locationalChannels.keySet().removeIf(k -> k.startsWith(player + "|"));
         scheduledRegions.removeIf(r -> r.data.getName().equals(player));
     }
 

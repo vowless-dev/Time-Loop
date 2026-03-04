@@ -3,6 +3,7 @@ package com.vltno.timeloop.commands;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.vltno.timeloop.*;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
@@ -121,7 +122,7 @@ public class BaseCommands {
         CommandSourceStack source = context.getSource();
         TimeLoop.stopLoop();
 
-        // Stop all playbacks and clear + recreate scene files
+        // Stop all mocap playbacks and clear + recreate scene files
         PlaybackManager.stopAll(CommandOutput.DUMMY, null);
         TimeLoop.loopSceneManager.forEachPlayerSceneName(playerSceneName -> {
             SceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
@@ -131,7 +132,13 @@ public class BaseCommands {
                 SceneFiles.add(CommandOutput.LOGS, playerSceneName);
             }
         });
-        TimeLoop.loopSceneManager.forEachRecordingPlayer(PlayerData::resetActiveSubsceneIndex);
+
+        // Stop voice playback and delete all voice audio (disk + memory)
+        VoicechatCompat.stopPlayback(null);
+        VoicechatCompat.deleteAllAudio();
+
+        // Delete orphaned mocap recording files from disk
+        TimeLoop.removeAllRecordings();
 
         TimeLoop.loopIteration = 0;
         TimeLoop.config.loopIteration = 0;

@@ -1,4 +1,4 @@
-package com.vltno.timeloop.voicechat;
+package com.vltno.timeloop.compat.voicechat;
 
 import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.TimeLoop;
@@ -39,14 +39,31 @@ public final class AudioPersistence {
     private static final int FORMAT_VERSION = 1;
     private static final String FILE_EXTENSION = ".tlva";
 
-    private static final ExecutorService IO_POOL =
-            Executors.newFixedThreadPool(Math.max(2,
-                    Runtime.getRuntime().availableProcessors() / 2),
-                    r -> {
-                        Thread t = new Thread(r, "TimeLoop-AudioIO");
-                        t.setDaemon(true);
-                        return t;
-                    });
+    private static volatile ExecutorService ioPool = createIOPool();
+
+    private static ExecutorService createIOPool() {
+        return Executors.newFixedThreadPool(Math.max(2,
+                Runtime.getRuntime().availableProcessors() / 2),
+                r -> {
+                    Thread t = new Thread(r, "TimeLoop-AudioIO");
+                    t.setDaemon(true);
+                    return t;
+                });
+    }
+
+    private static ExecutorService getIOPool() {
+        ExecutorService pool = ioPool;
+        if (pool == null || pool.isShutdown()) {
+            synchronized (AudioPersistence.class) {
+                pool = ioPool;
+                if (pool == null || pool.isShutdown()) {
+                    pool = createIOPool();
+                    ioPool = pool;
+                }
+            }
+        }
+        return pool;
+    }
 
     private AudioPersistence() {} // utility class
 
@@ -89,18 +106,13 @@ public final class AudioPersistence {
                                 player.getName(), capturedIter, seg, e
                         );
                     }
-                }, IO_POOL));
+                }, getIOPool()));
             }
         }
 
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
-    /**
-     * Saves all voice data for ALL recording players.
-     *
-     * @return a future that completes when everything is saved
-     */
     /**
      * Saves all voice data for ALL recording players (including inactive/disconnected ones,
      * since they may still have audio data in memory that hasn't been persisted).
@@ -183,14 +195,9 @@ public final class AudioPersistence {
                         "[AudioIO] Failed to load audio for {}", player.getName(), e
                 );
             }
-        }, IO_POOL);
+        }, getIOPool());
     }
 
-    /**
-     * Loads all voice data for ALL recording players.
-     *
-     * @return a future that completes when everything is loaded
-     */
     /**
      * Loads all voice data for ALL recording players (including currently inactive ones,
      * so audio is ready when they reconnect).
@@ -230,20 +237,58 @@ public final class AudioPersistence {
                         playerName, iteration, e
                 );
             }
-        }, IO_POOL);
+        }, getIOPool());
+    }
+
+    /**
+     * Deletes all saved voice audio for every player — the entire
+     * {@code timeloop_audio/} directory tree. Also clears in-memory audio
+     * for all recording players.
+     *
+     * @return a future that completes when deletion is done
+     */
+    public static CompletableFuture<Void> deleteAllAudio() {
+        return CompletableFuture.runAsync(() -> {
+            // Clear in-memory audio for every player
+            TimeLoop.loopSceneManager.forEachRecordingPlayer(PlayerData::removeAllAudio);
+
+            Path baseDir = getBaseDir();
+            if (!Files.isDirectory(baseDir)) return;
+
+            try (var walker = Files.walk(baseDir)) {
+                // Delete files first (deepest first), then directories
+                walker.sorted(Comparator.reverseOrder())
+                        .forEach(path -> {
+                            try {
+                                Files.deleteIfExists(path);
+                            } catch (IOException e) {
+                                TimeLoop.LOOP_LOGGER.warn(
+                                        "[AudioIO] Failed to delete {}", path, e
+                                );
+                            }
+                        });
+                TimeLoop.LOOP_LOGGER.info("[AudioIO] Deleted all voice audio");
+            } catch (IOException e) {
+                TimeLoop.LOOP_LOGGER.error(
+                        "[AudioIO] Failed to walk audio directory for deletion", e
+                );
+            }
+        }, getIOPool());
     }
 
     /**
      * Shuts down the IO thread pool. Call on server stop.
      */
     public static void shutdown() {
-        IO_POOL.shutdown();
+        ExecutorService pool = ioPool;
+        if (pool == null) return;
+        pool.shutdown();
         try {
-            if (!IO_POOL.awaitTermination(5, TimeUnit.SECONDS)) {
-                IO_POOL.shutdownNow();
+            if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
             }
         } catch (InterruptedException e) {
-            IO_POOL.shutdownNow();
+            pool.shutdownNow();
             Thread.currentThread().interrupt();
         }
     }

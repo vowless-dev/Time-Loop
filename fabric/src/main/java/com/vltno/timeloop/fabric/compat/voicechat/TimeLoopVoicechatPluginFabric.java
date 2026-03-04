@@ -1,6 +1,6 @@
-package com.vltno.timeloop.fabric.voicechat;
+package com.vltno.timeloop.fabric.compat.voicechat;
 
-import com.vltno.timeloop.voicechat.TimeLoopVoicechatPlugin;
+import com.vltno.timeloop.compat.voicechat.TimeLoopVoicechatPlugin;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.events.EventRegistration;

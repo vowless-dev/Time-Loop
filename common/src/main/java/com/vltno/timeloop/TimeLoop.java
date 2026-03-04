@@ -4,11 +4,9 @@ import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
-import com.vltno.timeloop.types.SkinTypes;
 import com.vltno.timeloop.compat.VoicechatInteractionCompat;
-import com.vltno.timeloop.voicechat.Bridge;
-import com.vltno.timeloop.voicechat.DummyBridge;
-import com.vltno.timeloop.voicechat.VoicechatBridge;
+import com.vltno.timeloop.compat.voicechat.AudioPersistence;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -25,10 +23,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.mt1006.mocap.api.v1.MocapAPI;
 import net.mt1006.mocap.api.v1.controller.MocapController;
-import net.mt1006.mocap.api.v1.controller.config.MocapOnChangeDimension;
-import net.mt1006.mocap.api.v1.controller.config.MocapOnDeath;
 import net.mt1006.mocap.api.v1.controller.config.MocapRecordingConfig;
 import net.mt1006.mocap.api.v1.controller.playable.*;
 import net.mt1006.mocap.api.v1.io.CommandInfo;
@@ -38,9 +33,10 @@ import net.mt1006.mocap.api.v1.modifiers.MocapModifiers;
 import net.mt1006.mocap.api.v1.modifiers.MocapPlayerSkin;
 import net.mt1006.mocap.api.v1.modifiers.MocapTime;
 import net.mt1006.mocap.api.v1.modifiers.MocapTimeModifiers;
-import net.mt1006.mocap.mocap.files.SceneData;
-import net.mt1006.mocap.mocap.files.SceneFiles;
 import net.mt1006.mocap.mocap.playing.PlaybackManager;
+import net.mt1006.mocap.mocap.playing.playable.ActiveRecording;
+import net.mt1006.mocap.mocap.recording.RecordingContext;
+import net.mt1006.mocap.mocap.recording.RecordingManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +51,7 @@ public class TimeLoop {
 	public static MinecraftServer server;
 	public static ServerLevel serverLevel;
 
-	// Mocap API controller — created on server start
+	// Mocap API controller - created on server start
 	public static MocapController mocapController;
 
 	// Per-player active recordings keyed by player name (for stop/save)
@@ -63,10 +59,10 @@ public class TimeLoop {
 
 	public static LoopBossBar loopBossBar;
 
-	// These fields will be initialized from the configuration file.
+	// Initialised from the config
 	public static int loopIteration;
 	public static int loopLengthTicks;
-	public static long startTimeOfDay; // The Time the Loop was started
+	public static long startTimeOfDay;
 	public static long timeSetting;
 	public static boolean trackTimeOfDay;
 	public static boolean isLooping;
@@ -93,8 +89,6 @@ public class TimeLoop {
     public static boolean voiceChatLoaded;
     public static boolean voiceInteractionLoaded;
 
-    public static Bridge voiceBridge;
-
     // Voice interaction settings (sculk / warden game events)
     public static boolean voiceInteractionEnabled;
     public static int voiceInteractionThresholdDb;
@@ -106,24 +100,11 @@ public class TimeLoop {
 
     // Whether voice chat audio is recorded during the loop
     public static boolean trackVoice;
-
-	// The configuration object loaded from disk
 	public static TimeLoopConfig config;
-
-	// The loop scene manager object
 	public static LoopSceneManager loopSceneManager;
-
-	// Get the world folder path for config/recording loading
 	public static Path worldFolder;
 
 	public static void init() {
-
-        if (voiceChatLoaded) {
-            voiceBridge = new VoicechatBridge();
-        } else {
-            voiceBridge = new DummyBridge();
-        }
-
 		loopBossBar = new LoopBossBar();
 
 		LOOP_LOGGER.info("Initializing TimeLoop mod (Common)");
@@ -140,8 +121,7 @@ public class TimeLoop {
         if (!isLooping) return;
 
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
-
-        if (!playerData.getActive()) return; // Shouldn't be possible but just in case
+        if (playerData == null || !playerData.getActive()) return;
 
         ResourceKey<Level> currentDimension = player.level().dimension();
         ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
@@ -177,10 +157,11 @@ public class TimeLoop {
         }
 		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
 		// Save voice audio to disk before advancing the iteration
-		voiceBridge.saveAudio();
+		VoicechatCompat.saveAudio();
 		saveRecordings();
 		removeOldSceneEntries();
 		PlaybackManager.stopAll(CommandOutput.DUMMY, null);
+        VoicechatCompat.stopPlayback(null);
 		playbackStartedThisIteration = false;
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
@@ -195,7 +176,7 @@ public class TimeLoop {
 			Vec3 startPosition = playerData.getStartPosition();
 			Vec3 joinPosition = playerData.getJoinPosition();
 			CompoundTag inventoryTag = playerData.getInventoryTag();
-			
+
 			Player player = server.getPlayerList().getPlayerByName(playerName);
             if (player == null) {
                 LOOP_LOGGER.warn("Player {} is offline, skipping rewind.", playerName);
@@ -209,7 +190,13 @@ public class TimeLoop {
 			}
 
             if (!rewindType.equals(RewindTypes.NONE)) {
-                ServerLevel targetLevel = (ServerLevel) player.level();
+                // Teleport to the dimension the player was in when the loop started,
+                // not whatever dimension they happen to be in now.
+                ResourceKey<Level> startDimKey = playerData.getStartDimensionKey();
+                ServerLevel targetLevel = startDimKey != null
+                        ? server.getLevel(startDimKey)
+                        : (ServerLevel) player.level();
+                if (targetLevel == null) targetLevel = (ServerLevel) player.level();
                 Set<Relative> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
@@ -265,19 +252,25 @@ public class TimeLoop {
 		if (showLoopInfo) {
 			loopBossBar.visible(loopType.equals(LoopTypes.TICKS) || loopType.equals(LoopTypes.TIME_OF_DAY));
 		}
-		
+
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
 			Player player = server.getPlayerList().getPlayerByName(playerName);
+			if (player == null) {
+				LOOP_LOGGER.warn("Cannot initialize loop for offline player: {}", playerName);
+				return;
+			}
 
 			HolderLookup.Provider provider = server.registryAccess();
 
 			CompoundTag invTag = saveFullInventory(player, provider);
     		playerData.setInventoryTag(invTag);
 
-			playerData.setStartPosition(server.getPlayerList().getPlayerByName(playerName).position());
+			playerData.setStartPosition(player.position());
+			playerData.setStartDimensionKey(player.level().dimension());
+			playerData.setLastDimensionKey(player.level().dimension());
 		});
 
         startTimeOfDay = serverLevel.getDayTime();
@@ -320,56 +313,104 @@ public class TimeLoop {
 	}
 
 	/**
-	 * Saves the recordings via the mocap API.
+	 * Saves the recordings via the mocap API for all active players.
 	 */
 	public static void saveRecordings() {
-		CommandOutput out = CommandOutput.LOGS;
-
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
 			if (!playerData.getActive()) return;
-
-			String playerName = playerData.getName();
-			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-
-			MocapActiveRecording activeRec = activeRecordings.remove(playerName);
-			if (activeRec == null || !activeRec.isValid()) {
-				LOOP_LOGGER.warn("No active mocap recording found for player: {}", playerName);
-				return;
-			}
-
-			// Stop the recording — this puts it into 'waiting for decision' state
-			activeRec.stop(out);
-
-			// Save to a named recording file
-			String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
-			MocapRecordingFile savedFile = activeRec.save(out, recordingName);
-			if (savedFile == null) {
-				LOOP_LOGGER.error("Failed to save mocap recording '{}' for player: {}", recordingName, playerName);
-				return;
-			}
-			LOOP_LOGGER.info("Saved mocap recording '{}' for player: {}", recordingName, playerName);
-
-			// Add the recording to the player's scene with a start_delay modifier
-			MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
-			if (sceneFile == null || !sceneFile.exists()) {
-				LOOP_LOGGER.error("Scene file '{}' not found for player: {}", playerSceneName, playerName);
-				return;
-			}
-
-			float delaySeconds = playerData.getTempOffset(0);
-			MocapModifiers modifiers = MocapModifiers.empty();
-			if (delaySeconds > 0f) {
-				MocapTimeModifiers timeMods = modifiers.getTimeModifiers()
-						.withStartDelay(MocapTime.fromSeconds(delaySeconds));
-				modifiers = modifiers.withTimeModifiers(timeMods);
-			}
-
-			sceneFile.add(out, savedFile, modifiers);
-			playerData.incrementActiveSubsceneIndex();
-
-			LOOP_LOGGER.info("Added recording '{}' to scene '{}' with delay {}s",
-					recordingName, playerSceneName, delaySeconds);
+			saveRecordingForPlayer(playerData);
 		});
+	}
+
+	/**
+	 * Saves <b>all</b> mocap recordings for a single player and adds them to
+	 * the player's scene file.
+	 */
+	public static void saveRecordingForPlayer(PlayerData playerData) {
+		CommandOutput out = CommandOutput.LOGS;
+		String playerName = playerData.getName();
+		String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+
+		MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
+		if (sceneFile == null || !sceneFile.exists()) {
+			LOOP_LOGGER.error("Scene file '{}' not found for player: {}", playerSceneName, playerName);
+			return;
+		}
+
+		ArrayList<Float> offsets = playerData.getTempOffsets();
+		int recordingIndex = 0;
+
+		// ── 1. Save the primary recording FIRST ──────────────────────────────
+		MocapActiveRecording primaryRec = activeRecordings.remove(playerName);
+		if (primaryRec != null && primaryRec.isValid()) {
+			((ActiveRecording) primaryRec).ctx.stop(out);
+
+			String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
+			MocapRecordingFile savedFile = primaryRec.save(out, recordingName);
+			if (savedFile != null) {
+				float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
+				sceneFile.add(out, savedFile, buildDelayModifiers(delay));
+				LOOP_LOGGER.info("Saved '{}' to scene '{}' with delay {}s",
+						recordingName, playerSceneName, delay);
+				recordingIndex++;
+			} else {
+				LOOP_LOGGER.error("Failed to save primary recording '{}' for player: {}",
+						recordingName, playerName);
+			}
+		} else {
+			LOOP_LOGGER.warn("No primary mocap recording found for player: {}", playerName);
+		}
+
+		// ── 2. Find and save split recording contexts ──────────────────────
+		List<RecordingContext> splitContexts = new ArrayList<>();
+		for (RecordingContext ctx : new ArrayList<>(RecordingManager.allContexts())) {
+			if (!ctx.source.name.equals("+timeloop")) continue;
+			if (!ctx.recordedPlayer.getName().getString().equals(playerName)) continue;
+			if (ctx.isRemoved()) continue;
+			splitContexts.add(ctx);
+		}
+
+		for (RecordingContext ctx : splitContexts) {
+			ctx.stop(out);
+			if (ctx.state != RecordingContext.State.WAITING_FOR_DECISION) {
+				LOOP_LOGGER.warn("Split context for {} in unexpected state: {}, skipping",
+						playerName, ctx.state);
+				continue;
+			}
+
+			MocapActiveRecording splitRec = ActiveRecording.get(ctx);
+			String recordingName = String.format("%s_loop%d_%d",
+					playerName.toLowerCase(), loopIteration, recordingIndex + 1);
+
+			MocapRecordingFile savedFile = splitRec.save(out, recordingName);
+			if (savedFile != null) {
+				float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
+				sceneFile.add(out, savedFile, buildDelayModifiers(delay));
+				LOOP_LOGGER.info("Saved split '{}' to scene '{}' with delay {}s",
+						recordingName, playerSceneName, delay);
+				recordingIndex++;
+			} else {
+				LOOP_LOGGER.error("Failed to save split recording '{}' for player: {}",
+						recordingName, playerName);
+			}
+		}
+
+		if (recordingIndex == 0) {
+			LOOP_LOGGER.warn("No recordings saved for player: {}", playerName);
+		}
+	}
+
+	/**
+	 * Builds a {@link MocapModifiers} with a start delay, or empty if delay is zero.
+	 */
+	private static MocapModifiers buildDelayModifiers(float delaySeconds) {
+		MocapModifiers modifiers = MocapModifiers.empty();
+		if (delaySeconds > 0f) {
+			MocapTimeModifiers timeMods = modifiers.getTimeModifiers()
+					.withStartDelay(MocapTime.fromSeconds(delaySeconds));
+			modifiers = modifiers.withTimeModifiers(timeMods);
+		}
+		return modifiers;
 	}
 
 	/**
@@ -380,9 +421,8 @@ public class TimeLoop {
 			LOOP_LOGGER.info("Stopping loop");
 
 			// Save voice audio to disk FIRST (synchronously!) before anything is torn down.
-			// saveAudio() saves ALL players regardless of active status.
 			try {
-				voiceBridge.saveAudio().get(10, java.util.concurrent.TimeUnit.SECONDS);
+				VoicechatCompat.saveAudio().get(10, java.util.concurrent.TimeUnit.SECONDS);
 			} catch (Exception e) {
 				LOOP_LOGGER.error("Voice audio save failed or timed out during stopLoop", e);
 			}
@@ -400,19 +440,19 @@ public class TimeLoop {
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
 			PlaybackManager.stopAll(CommandOutput.DUMMY, null);
-            voiceBridge.stopPlayback("");
+            VoicechatCompat.stopPlayback(null);
 			VoicechatInteractionCompat.clearCooldowns();
+			config.save();
 			LOOP_LOGGER.info("Loop stopped!");
 		}
 	}
 
 	/**
 	 * Starts mocap scene playback and voice playback for all recording players
-	 * that have previous iterations. Called both at iteration boundaries and
-	 * when the first player joins mid-loop (e.g. after a server restart).
+	 * that have previous iterations.
 	 */
 	public static void startPlaybackForAllPlayers() {
-		if (loopIteration <= 0) return; // Nothing to play back on iteration 0
+		if (loopIteration <= 0) return;
 
 		LOOP_LOGGER.info("Starting playback for all players (iteration {})", loopIteration);
 
@@ -424,7 +464,6 @@ public class TimeLoop {
 			Skin playerSkin = playerData.getSkin();
 			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-			// Build modifiers with player name and skin
 			MocapPlayerSkin mocapSkin = switch (playerSkin.skinType) {
 				case MINESKIN -> MocapPlayerSkin.fromMineSkin(playerSkin.value);
 				case FILE -> MocapPlayerSkin.fromFile(playerSkin.value);
@@ -433,20 +472,23 @@ public class TimeLoop {
 			MocapModifiers modifiers = MocapModifiers.playerName(playerNickname)
 					.withPlayerSkin(mocapSkin);
 
-			// Get the scene file and start playback
 			MocapSceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
 			if (sceneFile != null && sceneFile.exists()) {
-				// Start mocap scene FIRST — this spawns the FakePlayer entities synchronously
 				sceneFile.startPlayback(info, modifiers);
 				LOOP_LOGGER.info("Started mocap playback for scene '{}' as '{}'", playerSceneName, playerNickname);
 
-				// Collect all spawned entities for this player's nickname.
-				// Entities are already in the world from startPlayback() above.
-				var entities = VoicechatBridge.findAllMocapEntities(playerNickname);
+				var entities = VoicechatCompat.findAllMocapEntities(playerNickname);
 				LOOP_LOGGER.info("Found {} mocap entities for '{}'", entities.size(), playerNickname);
 
-				// Start voice with pre-assigned entity list — no race condition
-				voiceBridge.onStartPlayback(playerData, entities);
+				List<String> elementNames = new ArrayList<>();
+				var elements = sceneFile.getAll(CommandOutput.LOGS);
+				if (elements != null) {
+					for (var elem : elements) {
+						elementNames.add(elem.getName());
+					}
+				}
+
+				VoicechatCompat.onStartPlayback(playerData, entities, elementNames);
 			} else {
 				LOOP_LOGGER.warn("Scene file '{}' not found, skipping playback for player: {}", playerSceneName, playerName);
 			}
@@ -457,6 +499,10 @@ public class TimeLoop {
 
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
         PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
+        if (targetPlayer == null) {
+            LOOP_LOGGER.error("Cannot modify attributes: player '{}' not found in recording players", targetPlayerName);
+            return;
+        }
 
         targetPlayer.setNickname(newPlayerNickname);
         targetPlayer.setSkin(newSkin);
@@ -465,12 +511,6 @@ public class TimeLoop {
 
 	/**
 	 * Updates the entities to be tracked for recording and playback settings.
-	 * When items are enabled, also sets the entity tracking distance so items
-	 * are captured within a reasonable range. When disabled, resets distance to 1.
-	 *
-	 * @param items If true, includes items in the tracking list and uses the
-	 *              configured tracking distance. If false, excludes items and
-	 *              sets distance to 1 (minimum, just vehicles nearby).
 	 */
 	public static void updateEntitiesToTrack(boolean items) {
 		if (mocapController == null) return;
@@ -492,7 +532,6 @@ public class TimeLoop {
 
 	/**
 	 * Deletes a recording file directly from disk.
-	 * Mocap's own remove does not delete the file, so we do it ourselves.
 	 */
 	public static void removeRecording(String recording) {
 		try {
@@ -505,9 +544,40 @@ public class TimeLoop {
 	}
 
 	/**
+	 * Deletes all mocap recording files belonging to any recording player.
+	 * Scans the recordings directory for files matching the {@code <name>_loop*} pattern.
+	 */
+	public static void removeAllRecordings() {
+		Path recordingsDir = worldFolder.resolve("mocap_files").resolve("recordings");
+		if (!Files.isDirectory(recordingsDir)) return;
+
+		Set<String> playerPrefixes = new java.util.HashSet<>();
+		loopSceneManager.forEachRecordingPlayer(pd ->
+				playerPrefixes.add(pd.getName().toLowerCase() + "_loop"));
+
+		try (var stream = Files.newDirectoryStream(recordingsDir, "*.mcmocap_rec")) {
+			for (Path file : stream) {
+				String fileName = file.getFileName().toString();
+				String stem = fileName.substring(0, fileName.length() - ".mcmocap_rec".length());
+				for (String prefix : playerPrefixes) {
+					if (stem.startsWith(prefix)) {
+						try {
+							Files.delete(file);
+							LOOP_LOGGER.info("Deleted recording file: {}", file);
+						} catch (IOException e) {
+							LOOP_LOGGER.error("Failed to delete recording file: {}", file);
+						}
+						break;
+					}
+				}
+			}
+		} catch (IOException e) {
+			LOOP_LOGGER.error("Failed to scan recordings directory for cleanup", e);
+		}
+	}
+
+	/**
 	 * Removes outdated entries from the scene file to ensure the number of subscenes does not exceed the maximum allowed loops.
-	 * The method checks if there are more recorded subscenes in the scene file than the value specified by maxLoops. If so,
-	 * it removes the oldest entries to maintain the desired number. The updated data is then saved back to the file.
 	 */
 	private static void removeOldSceneEntries() {
 		if (maxLoops < 1) return;
@@ -532,7 +602,6 @@ public class TimeLoop {
 				String name = element.getName();
 				String[] parts = name.split("_");
 				try {
-					// Extract loop number from recording name like "player_loop5"
 					int elemLoop = -1;
 					for (String part : parts) {
 						if (part.startsWith("loop")) {
@@ -546,13 +615,16 @@ public class TimeLoop {
 						if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) {
 							removeRecording(name);
 						}
+						if (elemLoop >= 0) {
+							playerData.removeAudio(elemLoop);
+							AudioPersistence.deleteIterationAudio(playerData.getName(), elemLoop);
+						}
 					}
 				} catch (NumberFormatException e) {
-					toKeep.add(element); // Keep entries we can't parse
+					toKeep.add(element);
 				}
 			}
 
-			playerData.setActiveSubsceneIndex(toKeep.size());
 			sceneFile.replaceAll(out, toKeep);
 			LOOP_LOGGER.info("Trimmed scene '{}': kept {} of {} entries",
 					playerSceneName, toKeep.size(), elements.size());
@@ -588,17 +660,12 @@ public class TimeLoop {
 
         DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-        // Encode the ItemStack using its static CODEC
         Tag resultTag = ItemStack.CODEC.encodeStart(ops, stack)
                 .getOrThrow(error -> new IllegalStateException("Failed to encode ItemStack: " + error));
 
         return (CompoundTag) resultTag;
     }
 
-    /**
-     * Helper method to deserialize an ItemStack from a CompoundTag using its Codec.
-     * This bypasses the 'parseOptional' resolution error.
-     */
     private static ItemStack stackFromNbt(CompoundTag itemTag, HolderLookup.Provider provider) {
         if (itemTag.isEmpty()) {
             return ItemStack.EMPTY;
@@ -606,7 +673,6 @@ public class TimeLoop {
 
         DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-        // Decode the ItemStack using its static CODEC
         return ItemStack.CODEC.parse(ops, itemTag)
                 .result().orElse(ItemStack.EMPTY);
     }

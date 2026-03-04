@@ -120,7 +120,9 @@ public class TimeLoopNeoForge {
     // Player Respawn handler
     @SubscribeEvent
     public void afterRespawn(PlayerEvent.PlayerRespawnEvent event) {
-        PlayerNeoForgeEvent.afterRespawn();
+        if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            PlayerNeoForgeEvent.afterRespawn(serverPlayer);
+        }
     }
 
     @SubscribeEvent

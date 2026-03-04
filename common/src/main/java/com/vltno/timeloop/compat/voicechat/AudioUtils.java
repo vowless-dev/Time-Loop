@@ -1,4 +1,4 @@
-package com.vltno.timeloop.voicechat;
+package com.vltno.timeloop.compat.voicechat;
 
 /**
  * Audio analysis utilities for voice chat signals.
@@ -50,14 +50,4 @@ public final class AudioUtils {
         return calculateAudioLevelDb(samples) >= thresholdDb;
     }
 
-    /**
-     * Returns {@code true} if the given PCM frame is entirely silent
-     * (all zero samples).
-     */
-    public static boolean isSilent(short[] samples) {
-        for (short s : samples) {
-            if (s != 0) return false;
-        }
-        return true;
-    }
 }

@@ -1,7 +1,8 @@
-package com.vltno.timeloop.voicechat;
+package com.vltno.timeloop.compat.voicechat;
 
 import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.TimeLoop;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
@@ -19,8 +20,8 @@ public class TimeLoopVoicechatPlugin {
     public static void registerEvents(EventRegistration reg) {
         reg.registerEvent(MicrophonePacketEvent.class, TimeLoopVoicechatPlugin::onMic);
         reg.registerEvent(VoicechatServerStartedEvent.class, e -> {
-            VoicechatBridge.serverApi = e.getVoicechat();
-            VoicechatBridge.initCategory();
+            VoicechatCompat.serverApi = e.getVoicechat();
+            VoicechatCompat.initCategory();
         });
     }
 

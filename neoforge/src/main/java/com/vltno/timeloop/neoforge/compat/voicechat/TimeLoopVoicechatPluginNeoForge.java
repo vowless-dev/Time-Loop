@@ -1,6 +1,6 @@
-package com.vltno.timeloop.neoforge.voicechat;
+package com.vltno.timeloop.neoforge.compat.voicechat;
 
-import com.vltno.timeloop.voicechat.TimeLoopVoicechatPlugin;
+import com.vltno.timeloop.compat.voicechat.TimeLoopVoicechatPlugin;
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;

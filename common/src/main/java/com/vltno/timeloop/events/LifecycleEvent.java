@@ -3,6 +3,7 @@ package com.vltno.timeloop.events;
 import com.vltno.timeloop.LoopSceneManager;
 import com.vltno.timeloop.TimeLoopConfig;
 import com.vltno.timeloop.compat.VoicechatInteractionCompat;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.server.MinecraftServer;
 import com.vltno.timeloop.TimeLoop;
 import net.minecraft.world.level.storage.LevelResource;
@@ -107,7 +108,7 @@ public class LifecycleEvent {
         VoicechatInteractionCompat.resolveGameEvent();
 
         // Load saved voice audio from disk (async, populates PlayerData audio maps)
-        TimeLoop.voiceBridge.loadAudio();
+        VoicechatCompat.loadAudio();
     }
 
     public static void onServerStopping()
@@ -141,7 +142,7 @@ public class LifecycleEvent {
         // Clean up voice interaction cooldowns
         VoicechatInteractionCompat.clearCooldowns();
 
-        // Shut down voice bridge thread pools
-        TimeLoop.voiceBridge.shutdown();
+        // Shut down voice chat thread pools and persistence
+        VoicechatCompat.shutdown();
     }
 }

@@ -1,6 +1,7 @@
 package com.vltno.timeloop;
 
-import com.vltno.timeloop.voicechat.TimedAudioFrame;
+import com.vltno.timeloop.compat.voicechat.AudioPersistence;
+import com.vltno.timeloop.compat.voicechat.TimedAudioFrame;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
@@ -30,8 +31,8 @@ public class PlayerData {
 
     // ── Runtime-only fields (excluded from Gson serialization) ─-
     private transient ResourceKey<Level> lastDimensionKey;
+    private transient ResourceKey<Level> startDimensionKey;
     private transient int activeRecordingIndex;
-    private transient int activeSubsceneIndex;
     private transient ArrayList<Float> tempOffsets;
     private transient int activeSegment;
 
@@ -48,13 +49,13 @@ public class PlayerData {
     }
 
     /**
-     * Initializes transient fields that Gson skips during deserialization.
+     * Initialises transient fields that Gson skips during deserialization.
      * Must be called after Gson constructs an instance (e.g. in config load).
      */
     public void initTransients() {
         this.lastDimensionKey = null;
+        this.startDimensionKey = null;
         this.activeRecordingIndex = 1;
-        this.activeSubsceneIndex = 0;
         this.tempOffsets = new ArrayList<>();
         this.tempOffsets.add(0f);
         this.activeSegment = 1;
@@ -133,6 +134,14 @@ public class PlayerData {
         this.lastDimensionKey = lastDimensionKey;
     }
 
+    public ResourceKey<Level> getStartDimensionKey() {
+        return startDimensionKey;
+    }
+
+    public void setStartDimensionKey(ResourceKey<Level> startDimensionKey) {
+        this.startDimensionKey = startDimensionKey;
+    }
+
     public int getActiveRecordingIndex() {
         return activeRecordingIndex;
     }
@@ -143,22 +152,6 @@ public class PlayerData {
 
     public void resetActiveRecordingIndex() {
         this.activeRecordingIndex = 1;
-    }
-
-    public int getActiveSubsceneIndex() {
-        return activeSubsceneIndex;
-    }
-
-    public void incrementActiveSubsceneIndex() {
-        this.activeSubsceneIndex++;
-    }
-
-    public void setActiveSubsceneIndex(int subsceneIndex) {
-        this.activeSubsceneIndex = subsceneIndex;
-    }
-
-    public void resetActiveSubsceneIndex() {
-        this.activeSubsceneIndex = 1;
     }
 
     public void addTempOffset(float value) {
@@ -225,7 +218,7 @@ public class PlayerData {
 
     /**
      * Adds a voice frame for a specific iteration and segment.
-     * Used by {@link com.vltno.timeloop.voicechat.AudioPersistence} when loading
+     * Used by {@link AudioPersistence} when loading
      * saved audio from disk (where the segment is known explicitly, not derived
      * from the active segment).
      */
@@ -241,6 +234,24 @@ public class PlayerData {
 
     public Map<Integer, List<TimedAudioFrame>> getAudio(int iteration) {
         return audio.getOrDefault(iteration, Map.of());
+    }
+
+    /**
+     * Removes all in-memory audio and position data for the given iteration.
+     * Called when old scene entries are trimmed to keep memory in sync with disk.
+     */
+    public void removeAudio(int iteration) {
+        audio.remove(iteration);
+        positions.remove(iteration);
+    }
+
+    /**
+     * Removes all in-memory audio and position data for every iteration.
+     * Called on loop reset to clear all voice data.
+     */
+    public void removeAllAudio() {
+        audio.clear();
+        positions.clear();
     }
 
     /**

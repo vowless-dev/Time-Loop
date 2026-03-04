@@ -18,7 +18,7 @@
 			"com.vltno.timeloop.fabric.TimeLoopFabric"
 		],
         "voicechat": [
-            "com.vltno.timeloop.fabric.voicechat.TimeLoopVoicechatPluginFabric"
+          "com.vltno.timeloop.fabric.compat.voicechat.TimeLoopVoicechatPluginFabric"
         ]
     },
 	"depends": {

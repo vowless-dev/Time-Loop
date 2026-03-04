@@ -67,13 +67,16 @@ public class TogglesCommands {
         TimeLoop.config.trackInventory = newTrackInventory;
         TimeLoop.config.save();
 
+        HolderLookup.Provider provider = TimeLoop.server.registryAccess();
         TimeLoop.loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
             String playerName = playerData.getName();
             Player player = TimeLoop.server.getPlayerList().getPlayerByName(playerName);
-
-            HolderLookup.Provider provider = TimeLoop.server.registryAccess();
+            if (player == null) {
+                TimeLoop.LOOP_LOGGER.warn("Cannot snapshot inventory for offline player: {}", playerName);
+                return;
+            }
 
             CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
             playerData.setInventoryTag(invTag);

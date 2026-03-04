@@ -205,10 +205,21 @@ public class SettingsCommands {
     }
 
     private static int modifyPlayer(CommandContext<CommandSourceStack> context, SkinTypes skinType) {
-        // TODO! - Add proper error messages!!!
         CommandSourceStack source = context.getSource();
         String targetPlayer = StringArgumentType.getString(context, "targetPlayer");
+
+        // Validate the target player exists in the loop
+        PlayerData targetData = TimeLoop.loopSceneManager.getRecordingPlayer(targetPlayer);
+        if (targetData == null) {
+            source.sendFailure(Component.literal("Player '" + targetPlayer + "' is not a recording player."));
+            return 0;
+        }
+
         String newName = StringArgumentType.getString(context, "newName").replace(" ", "").toLowerCase();
+        if (newName.isEmpty()) {
+            source.sendFailure(Component.literal("Player name cannot be empty."));
+            return 0;
+        }
 
         Skin finalSkin = new Skin();
         String rawSkinValue;
@@ -228,12 +239,11 @@ public class SettingsCommands {
 
             if (host.equals("mineskin.org") || host.equals("minesk.in")) {
                 finalSkin.value = testUrl.replaceFirst("^[a-zA-Z]+://", "");
-
                 finalSkin.skinType = SkinTypes.MINESKIN;
-
                 LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected MineSkin URL {}", finalSkin.value);
             } else {
                 String[] filetypes = {".jpg", ".jpeg", ".png"};
+                boolean foundFile = false;
 
                 for (String filetype : filetypes) {
                     String filename;
@@ -243,24 +253,29 @@ public class SettingsCommands {
                     } else {
                         filename = rawSkinValue;
                     }
-                    LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin input is not a URL, trying as file: {}", filename);
-                    LoopCommands.LOOP_COMMANDS_LOGGER.info("looking at file: {}", TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename));
                     File skinFile = new File(TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename).toString());
 
                     if (skinFile.isFile()) {
                         LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected skin at {}", skinFile.getPath());
                         finalSkin.value = rawSkinValue;
-
                         finalSkin.skinType = SkinTypes.FILE;
-                    } else {
-                        LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin {} is not url or file.", filename);
+                        foundFile = true;
+                        break;
                     }
                 }
+
+                if (!foundFile) {
+                    source.sendFailure(Component.literal("Skin '" + rawSkinValue + "' is not a valid MineSkin URL or skin file."));
+                    return 0;
+                }
             }
-        } catch (URISyntaxException | NullPointerException ignored) {}
+        } catch (URISyntaxException | NullPointerException e) {
+            // Not a URL — treat as player name skin (default)
+            LoopCommands.LOOP_COMMANDS_LOGGER.debug("Skin input '{}' is not a URL, using as player name", rawSkinValue);
+        }
 
         TimeLoop.modifyPlayerAttributes(targetPlayer, newName, finalSkin);
-        source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);
+        source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer + " -> '" + newName + "'"), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, finalSkin.value);
         return 1;
     }
