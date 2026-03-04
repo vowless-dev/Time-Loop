@@ -690,7 +690,7 @@ public class TimeLoop {
         }
         tag.put("main", main);
 
-        // 2. Armor (Iterate using the explicit, fixed array)
+        // 2. Armour (Iterate using the explicit, fixed array)
         ListTag armor = new ListTag();
         for (EquipmentSlot slot : ARMOR_SLOTS) {
             ItemStack stack = player.getItemBySlot(slot); // Use player.getItemBySlot()
@@ -733,7 +733,7 @@ public class TimeLoop {
             inventory.setItem(i, stack);
         }
 
-        // 2. Armor (Load using the explicit, fixed array)
+        // 2. Armour (Load using the explicit, fixed array)
         // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
         ListTag armor = tag.getList("armor").orElseGet(ListTag::new);
 
