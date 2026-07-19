@@ -1,7 +1,9 @@
 package com.vltno.timeloop.events;
 
+import com.vltno.timeloop.PlayerData;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.TimeLoop;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -12,6 +14,11 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 
+import net.mt1006.mocap.api.v1.controller.config.MocapRecordingConfig;
+import net.mt1006.mocap.api.v1.controller.playable.MocapActiveRecording;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.files.SceneFiles;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 
@@ -21,20 +28,31 @@ public class PlayConnectionEvent {
         String playerName = player.getName().getString();
         HolderLookup.Provider provider = server.registryAccess();
 
-        try {
-            TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(true);
-        } catch (Exception e) {
+        com.vltno.timeloop.PlayerData existingData =
+                TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
+        if (existingData != null) {
+            existingData.setActive(true);
+        } else {
             TimeLoop.loopSceneManager.addPlayer(playerName, player.position());
+            existingData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
         }
 
-        CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
-        TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setInventoryTag(invTag);
+        // Only snapshot inventory when the loop is NOT running — during a loop,
+        // the saved inventory represents the start-of-loop state and must not be
+        // overwritten by a reconnecting player's current (potentially changed) inventory.
+        if (!TimeLoop.isLooping) {
+            CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
+            existingData.setInventoryTag(invTag);
+        }
 
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.addPlayer(player);
         }
 
-        TimeLoop.executeCommand(String.format("mocap scenes add %s", TimeLoop.loopSceneManager.getPlayerSceneName(playerName)));
+        // Ensure the player's scene file exists (no-op if it already does)
+        if (TimeLoop.mocapController != null) {
+            SceneFiles.add(CommandOutput.LOGS, TimeLoop.loopSceneManager.getPlayerSceneName(playerName));
+        }
 
         if (TimeLoop.config != null && TimeLoop.config.firstStart) {
             TimeLoop.config.firstStart = false;
@@ -71,14 +89,30 @@ public class PlayConnectionEvent {
         }
 
         if (TimeLoop.isLooping) {
-            TimeLoop.LOOP_LOGGER.info("Starting recording for newly joined player: {}", playerName);
-            TimeLoop.executeCommand(String.format("mocap recording start %s", playerName));
+            TimeLoop.queueTask(() -> {
+                TimeLoop.LOOP_LOGGER.info("Starting recording for newly joined player: {}", playerName);
+                if (TimeLoop.mocapController != null) {
+                    MocapRecordingConfig recConfig = MocapRecordingConfig.createFromSettings();
+                    MocapActiveRecording recording = TimeLoop.mocapController.startRecording(player, recConfig, true);
+                    if (recording != null) {
+                        TimeLoop.activeRecordings.put(playerName, recording);
+                    } else {
+                        TimeLoop.LOOP_LOGGER.error("Failed to start mocap recording for joining player: {}", playerName);
+                    }
+                }
 
-            if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
+                // If playback hasn't been started yet this iteration (e.g. server restart
+                // mid-loop, or singleplayer rejoin), start mocap + voice for ALL players now.
+                if (!TimeLoop.playbackStartedThisIteration && TimeLoop.loopIteration > 0) {
+                    TimeLoop.LOOP_LOGGER.info("First player join mid-loop — starting playback for all players");
+                    TimeLoop.startPlaybackForAllPlayers();
+                }
 
-                boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
-                TimeLoop.loopBossBar.visible(shouldBeVisible);
-            }
+                if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
+                    boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
+                    TimeLoop.loopBossBar.visible(shouldBeVisible);
+                }
+            });
         }
     }
 
@@ -86,13 +120,24 @@ public class PlayConnectionEvent {
         ServerPlayer player = handler.player;
         String playerName = player.getName().getString();
 
-        TimeLoop.loopSceneManager.getRecordingPlayer(playerName).setActive(false);
+        PlayerData playerData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
+
+        if (TimeLoop.isLooping && playerData != null && playerData.getActive()) {
+            // Save ONLY this player's voice audio and mocap recording — not everyone's.
+            // Must happen BEFORE marking inactive so the save includes this player.
+            VoicechatCompat.savePlayerAudio(playerData);
+            TimeLoop.saveRecordingForPlayer(playerData);
+            TimeLoop.loopSceneManager.saveRecordingPlayers();
+        }
+
+        // Stop voice playback for the disconnecting player
+        VoicechatCompat.stopPlayback(playerName);
+
+        if (playerData != null) {
+            playerData.setActive(false);
+        }
         if (TimeLoop.loopBossBar != null) {
             TimeLoop.loopBossBar.removePlayer(player);
-        }
-        if (TimeLoop.isLooping) {
-            TimeLoop.saveRecordings();
-            TimeLoop.loopSceneManager.saveRecordingPlayers();
         }
     }
 }
