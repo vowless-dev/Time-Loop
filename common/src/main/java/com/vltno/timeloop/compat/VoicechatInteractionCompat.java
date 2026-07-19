@@ -4,7 +4,7 @@ import com.vltno.timeloop.TimeLoop;
 import com.vltno.timeloop.compat.voicechat.AudioUtils;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -62,7 +62,7 @@ public final class VoicechatInteractionCompat {
         }
 
         // Try vcinteraction's own event first (has proper sculk frequency mapping)
-        Identifier vcLoc = Identifier.fromNamespaceAndPath("vcinteraction", "voice");
+        ResourceLocation vcLoc = ResourceLocation.fromNamespaceAndPath("vcinteraction", "voice");
         var vcHolder = BuiltInRegistries.GAME_EVENT.get(vcLoc);
         if (vcHolder.isPresent()) {
             voiceEvent = vcHolder.get();
@@ -72,7 +72,7 @@ public final class VoicechatInteractionCompat {
         TimeLoop.LOOP_LOGGER.warn("[Compat] vcinteraction loaded but its GameEvent not found — falling back to timeloop:voice");
 
         // Fall back to our own
-        Identifier tlLoc = Identifier.fromNamespaceAndPath("timeloop", "voice");
+        ResourceLocation tlLoc = ResourceLocation.fromNamespaceAndPath("timeloop", "voice");
         var tlHolder = BuiltInRegistries.GAME_EVENT.get(tlLoc);
         if (tlHolder.isPresent()) {
             voiceEvent = tlHolder.get();
