@@ -63,14 +63,14 @@ public class PlayConnectionEvent {
             try {
                 Component modrinthLink = Component.literal("https://modrinth.com/mod/timeloop")
                         .withStyle(Style.EMPTY
-                                .withClickEvent(new ClickEvent.OpenUrl(new URI("https://modrinth.com/mod/timeloop")))
+                                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://modrinth.com/mod/timeloop"))
                                 .withColor(ChatFormatting.BLUE)
                                 .withUnderlined(true)
                         );
 
                 Component discordLink = Component.literal("https://discord.gg/nzDETZhqur")
                         .withStyle(Style.EMPTY
-                                .withClickEvent(new ClickEvent.OpenUrl(new URI("https://discord.gg/nzDETZhqur")))
+                                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/nzDETZhqur"))
                                 .withColor(ChatFormatting.BLUE)
                                 .withUnderlined(true)
                         );
@@ -83,8 +83,8 @@ public class PlayConnectionEvent {
                     player.sendSystemMessage(Component.literal("Information: ").append(modrinthLink));
                     player.sendSystemMessage(Component.literal("Help: ").append(discordLink));
                 }
-            } catch (URISyntaxException e) {
-                TimeLoop.LOOP_LOGGER.error("URISyntaxException: " + e);
+            } catch (Exception e) {
+                TimeLoop.LOOP_LOGGER.error("Exception: " + e);
             }
         }
 
