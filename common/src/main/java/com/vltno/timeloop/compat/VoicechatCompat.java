@@ -564,7 +564,7 @@ public final class VoicechatCompat {
             for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
                 if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
                     if (realPlayerUUIDs.contains(serverPlayer.getUUID())) continue;
-                    if (nickname.equals(serverPlayer.getGameProfile().name())) {
+                    if (nickname.equals(serverPlayer.getGameProfile().getName())) {
                         result.add(entity);
                     }
                 }

@@ -226,7 +226,7 @@ public class TimeLoop {
                         teleportPosition = joinPosition;
                     }
                     case SPAWN_POSITION -> {
-                        Vec3 spawnPosition = server.overworld().getRespawnData().pos().getBottomCenter();
+                        Vec3 spawnPosition = server.overworld().getSharedSpawnPos().getBottomCenter();
                         if (spawnPosition == null) {
                             LOOP_LOGGER.error("Server has no spawn position yet. (somehow??)");
                             return;
