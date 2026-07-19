@@ -193,7 +193,7 @@ public final class VoicechatImpl {
                 TimeLoop.LOOP_LOGGER.debug(
                         "[Voice] {} speech regions for {} i{} s{} -> entity {}",
                         regions.size(), data.getName(), iter, seg,
-                        assignedEntity != null ? assignedEntity.level().dimension().identifier() : "null"
+                        assignedEntity != null ? assignedEntity.level().dimension().location() : "null"
                 );
 
                 // Schedule each speech region to start at the right tick
@@ -564,7 +564,7 @@ public final class VoicechatImpl {
             for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
                 if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
                     if (realPlayerUUIDs.contains(serverPlayer.getUUID())) continue;
-                    if (nickname.equals(serverPlayer.getGameProfile().name())) {
+                    if (nickname.equals(serverPlayer.getGameProfile().getName())) {
                         result.add(entity);
                     }
                 }
