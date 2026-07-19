@@ -100,9 +100,15 @@ public class TimeLoop {
 
     // Whether voice chat audio is recorded during the loop
     public static boolean trackVoice;
-	public static TimeLoopConfig config;
+		public static TimeLoopConfig config;
 	public static LoopSceneManager loopSceneManager;
 	public static Path worldFolder;
+
+	public static final java.util.Queue<Runnable> delayedTasks = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+	public static void queueTask(Runnable task) {
+		delayedTasks.add(task);
+	}
 
 	public static void init() {
 		loopBossBar = new LoopBossBar();
@@ -343,19 +349,24 @@ public class TimeLoop {
 		// ── 1. Save the primary recording FIRST ──────────────────────────────
 		MocapActiveRecording primaryRec = activeRecordings.remove(playerName);
 		if (primaryRec != null && primaryRec.isValid()) {
-			((ActiveRecording) primaryRec).ctx.stop(out);
-
-			String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
-			MocapRecordingFile savedFile = primaryRec.save(out, recordingName);
-			if (savedFile != null) {
-				float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
-				sceneFile.add(out, savedFile, buildDelayModifiers(delay));
-				LOOP_LOGGER.info("Saved '{}' to scene '{}' with delay {}s",
-						recordingName, playerSceneName, delay);
-				recordingIndex++;
+			RecordingContext primaryCtx = ((ActiveRecording) primaryRec).ctx;
+			primaryCtx.stop(out);
+			
+			if (primaryCtx.state == RecordingContext.State.WAITING_FOR_DECISION) {
+				String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
+				MocapRecordingFile savedFile = primaryRec.save(out, recordingName);
+				if (savedFile != null) {
+					float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
+					sceneFile.add(out, savedFile, buildDelayModifiers(delay));
+					LOOP_LOGGER.info("Saved '{}' to scene '{}' with delay {}s",
+							recordingName, playerSceneName, delay);
+					recordingIndex++;
+				} else {
+					LOOP_LOGGER.error("Failed to save primary recording '{}' for player: {}",
+							recordingName, playerName);
+				}
 			} else {
-				LOOP_LOGGER.error("Failed to save primary recording '{}' for player: {}",
-						recordingName, playerName);
+				LOOP_LOGGER.warn("Primary recording for '{}' failed to stop properly (state: {}). Skipping save.", playerName, primaryCtx.state);
 			}
 		} else {
 			LOOP_LOGGER.warn("No primary mocap recording found for player: {}", playerName);
@@ -474,8 +485,12 @@ public class TimeLoop {
 
 			MocapSceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
 			if (sceneFile != null && sceneFile.exists()) {
-				sceneFile.startPlayback(info, modifiers);
-				LOOP_LOGGER.info("Started mocap playback for scene '{}' as '{}'", playerSceneName, playerNickname);
+				try {
+					sceneFile.startPlayback(info, modifiers);
+					LOOP_LOGGER.info("Started mocap playback for scene '{}' as '{}'", playerSceneName, playerNickname);
+				} catch (Exception e) {
+					LOOP_LOGGER.error("Failed to start mocap playback for scene '{}': {}", playerSceneName, e.getMessage(), e);
+				}
 
 				var entities = VoicechatCompat.findAllMocapEntities(playerNickname);
 				LOOP_LOGGER.info("Found {} mocap entities for '{}'", entities.size(), playerNickname);

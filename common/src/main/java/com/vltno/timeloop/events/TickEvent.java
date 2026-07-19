@@ -5,6 +5,15 @@ import com.vltno.timeloop.compat.VoicechatCompat;
 
 public class TickEvent {
     public static void onEndServerTick() {
+        Runnable task;
+        while ((task = TimeLoop.delayedTasks.poll()) != null) {
+            try {
+                task.run();
+            } catch (Exception e) {
+                TimeLoop.LOOP_LOGGER.error("Error executing delayed task", e);
+            }
+        }
+
         if (!TimeLoop.isLooping) return;
 
         // tickCounter and voice tick must ALWAYS increment, regardless of loop type.
