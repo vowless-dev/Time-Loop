@@ -67,13 +67,16 @@ public class TogglesCommands {
         TimeLoop.config.trackInventory = newTrackInventory;
         TimeLoop.config.save();
 
+        HolderLookup.Provider provider = TimeLoop.server.registryAccess();
         TimeLoop.loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
             String playerName = playerData.getName();
             Player player = TimeLoop.server.getPlayerList().getPlayerByName(playerName);
-
-            HolderLookup.Provider provider = TimeLoop.server.registryAccess();
+            if (player == null) {
+                TimeLoop.LOOP_LOGGER.warn("Cannot snapshot inventory for offline player: {}", playerName);
+                return;
+            }
 
             CompoundTag invTag = TimeLoop.saveFullInventory(player, provider);
             playerData.setInventoryTag(invTag);
@@ -123,7 +126,9 @@ public class TogglesCommands {
         TimeLoop.config.trackChat = newTrackChat;
         TimeLoop.config.save();
 
-        TimeLoop.executeCommand("mocap settings recording chat_recording " + newTrackChat);
+        if (TimeLoop.mocapController != null) {
+            TimeLoop.mocapController.setSetting("chat_recording", String.valueOf(newTrackChat));
+        }
 
         source.sendSuccess(() -> Component.literal("Track chat is set to: " + newTrackChat), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Track chat set to {}", newTrackChat);
@@ -137,7 +142,9 @@ public class TogglesCommands {
         TimeLoop.config.hurtLoopedPlayers = newHurtLoopedPlayers;
         TimeLoop.config.save();
 
-        TimeLoop.executeCommand("mocap settings playback invulnerable_playback " + !newHurtLoopedPlayers);
+        if (TimeLoop.mocapController != null) {
+            TimeLoop.mocapController.setSetting("invulnerable_playback", String.valueOf(!newHurtLoopedPlayers));
+        }
 
         source.sendSuccess(() -> Component.literal("Hurt looped players is set to: " + newHurtLoopedPlayers), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Hurt looped players set to {}", newHurtLoopedPlayers);

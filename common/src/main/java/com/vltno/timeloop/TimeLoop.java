@@ -1,17 +1,12 @@
 package com.vltno.timeloop;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.DynamicOps;
 import com.vltno.timeloop.types.LoopTypes;
 import com.vltno.timeloop.types.MaxLoopsTypes;
 import com.vltno.timeloop.types.RewindTypes;
-import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
+import com.vltno.timeloop.compat.VoicechatInteractionCompat;
+import com.vltno.timeloop.compat.voicechat.AudioPersistence;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -28,6 +23,20 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.mt1006.mocap.api.v1.controller.MocapController;
+import net.mt1006.mocap.api.v1.controller.config.MocapRecordingConfig;
+import net.mt1006.mocap.api.v1.controller.playable.*;
+import net.mt1006.mocap.api.v1.io.CommandInfo;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.playing.playable.SceneFile;
+import net.mt1006.mocap.api.v1.modifiers.MocapModifiers;
+import net.mt1006.mocap.api.v1.modifiers.MocapPlayerSkin;
+import net.mt1006.mocap.api.v1.modifiers.MocapTime;
+import net.mt1006.mocap.api.v1.modifiers.MocapTimeModifiers;
+import net.mt1006.mocap.mocap.playing.PlaybackManager;
+import net.mt1006.mocap.mocap.playing.playable.ActiveRecording;
+import net.mt1006.mocap.mocap.recording.RecordingContext;
+import net.mt1006.mocap.mocap.recording.RecordingManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,18 +44,25 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class TimeLoop {
 	public static final Logger LOOP_LOGGER = LoggerFactory.getLogger("TimeLoop");
 	public static MinecraftServer server;
 	public static ServerLevel serverLevel;
-	
+
+	// Mocap API controller - created on server start
+	public static MocapController mocapController;
+
+	// Per-player active recordings keyed by player name (for stop/save)
+	public static final Map<String, MocapActiveRecording> activeRecordings = new ConcurrentHashMap<>();
+
 	public static LoopBossBar loopBossBar;
 
-	// These fields will be initialized from the configuration file.
+	// Initialised from the config
 	public static int loopIteration;
 	public static int loopLengthTicks;
-	public static long startTimeOfDay; // The Time the Loop was started
+	public static long startTimeOfDay;
 	public static long timeSetting;
 	public static boolean trackTimeOfDay;
 	public static boolean isLooping;
@@ -55,23 +71,44 @@ public class TimeLoop {
 	public static int tickCounter; // Tracks elapsed ticks
 	public static int ticksLeft;
 
+	// Whether mocap scene playback has been started for the current iteration.
+	// Reset on iteration advance and server start. Used to trigger playback
+	// when the first player joins mid-loop (e.g. after a server restart).
+	public static boolean playbackStartedThisIteration;
+
 	public static boolean showLoopInfo;
 	public static boolean displayTimeInTicks;
 	public static boolean trackItems;
+	public static int entityTrackingDistance;
 	public static LoopTypes loopType;
 	public static boolean trackChat;
 	public static boolean hurtLoopedPlayers;
 	public static RewindTypes rewindType;
 	public static boolean trackInventory;
 
-	// The configuration object loaded from disk
-	public static TimeLoopConfig config;
+    public static boolean voiceChatLoaded;
+    public static boolean voiceInteractionLoaded;
 
-	// The loop scene manager object
+    // Voice interaction settings (sculk / warden game events)
+    public static boolean voiceInteractionEnabled;
+    public static int voiceInteractionThresholdDb;
+    public static int voiceInteractionCooldownTicks;
+    public static float voiceAudioDistance;
+
+    // Whether to show the SVC speaker icon above looped player entities
+    public static boolean showPlayerVoiceIcon;
+
+    // Whether voice chat audio is recorded during the loop
+    public static boolean trackVoice;
+		public static TimeLoopConfig config;
 	public static LoopSceneManager loopSceneManager;
-
-	// Get the world folder path for config/recording loading
 	public static Path worldFolder;
+
+	public static final java.util.Queue<Runnable> delayedTasks = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+	public static void queueTask(Runnable task) {
+		delayedTasks.add(task);
+	}
 
 	public static void init() {
 		loopBossBar = new LoopBossBar();
@@ -80,38 +117,17 @@ public class TimeLoop {
 	}
 
 	/**
-	 * Executes a minecraft chat command.
+	 * Returns the {@link CommandInfo} for the current server level from the mocap controller.
 	 */
-	public static void executeCommand(String command) {
-		if (server == null) {
-			LOOP_LOGGER.error("Attempted to execute command while server is null: {}", command);
-		}
-		
-		server.execute(() -> {
-			try {
-				Commands commands = server.getCommands();
-
-				CommandSourceStack commandSource = server.createCommandSourceStack();
-
-				LOOP_LOGGER.info("Executing command: {}", command);
-
-				commands.getDispatcher().execute(command, commandSource);
-
-				LOOP_LOGGER.info("Command executed successfully: {}", command);
-			} catch (CommandSyntaxException e) {
-				LOOP_LOGGER.error("Failed to execute command '{}' due to syntax error: {}", command, e.getMessage());
-			} catch (Exception e) {
-				LOOP_LOGGER.error("An unexpected error occurred while executing command '{}': {}", command, e.getMessage(), e);
-			}
-		});
+	public static CommandInfo getMocapCommandInfo() {
+		return mocapController.getCommandInfo();
 	}
 
     public static void handlePlayerDimensionChange(ServerPlayer player) {
         if (!isLooping) return;
 
         PlayerData playerData = loopSceneManager.getRecordingPlayer(player.getName().getString());
-
-        if (!playerData.getActive()) return; // Shouldn't be possible but just in case
+        if (playerData == null || !playerData.getActive()) return;
 
         ResourceKey<Level> currentDimension = player.level().dimension();
         ResourceKey<Level> lastDimension = playerData.getLastDimensionKey();
@@ -122,6 +138,7 @@ public class TimeLoop {
         }
 
         playerData.incrementActiveRecordingIndex();
+        playerData.nextSegment();
 
         playerData.addTempOffset(convertTicksToSeconds(tickCounter));
 
@@ -145,18 +162,23 @@ public class TimeLoop {
             return;
         }
 		LOOP_LOGGER.info("Starting iteration {} of loop", loopIteration);
+		// Save voice audio to disk before advancing the iteration
+		VoicechatCompat.saveAudio();
 		saveRecordings();
 		removeOldSceneEntries();
-		executeCommand("mocap playback stop_all including_others");
+		PlaybackManager.stopAll(CommandOutput.DUMMY, null);
+        VoicechatCompat.stopPlayback(null);
+		playbackStartedThisIteration = false;
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
+        loopIteration++;
+
+		// Rewind active players (inventory, position) before starting playback
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
-			String playerNickname = playerData.getNickname();
-			Skin playerSkin = playerData.getSkin();
 			Vec3 startPosition = playerData.getStartPosition();
 			Vec3 joinPosition = playerData.getJoinPosition();
 			CompoundTag inventoryTag = playerData.getInventoryTag();
@@ -174,7 +196,13 @@ public class TimeLoop {
 			}
 
             if (!rewindType.equals(RewindTypes.NONE)) {
-                ServerLevel targetLevel = (ServerLevel) player.level();
+                // Teleport to the dimension the player was in when the loop started,
+                // not whatever dimension they happen to be in now.
+                ResourceKey<Level> startDimKey = playerData.getStartDimensionKey();
+                ServerLevel targetLevel = startDimKey != null
+                        ? server.getLevel(startDimKey)
+                        : (ServerLevel) player.level();
+                if (targetLevel == null) targetLevel = (ServerLevel) player.level();
                 Set<Relative> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
@@ -209,20 +237,11 @@ public class TimeLoop {
                 player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch, setCamera);
             }
             playerData.setLastDimensionKey(player.level().dimension());
-
-			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
-
-            String skin_from = "skin_from_player";
-
-            switch (playerSkin.skinType) {
-                case MINESKIN -> skin_from = "skin_from_mineskin";
-                case FILE -> skin_from = "skin_from_file";
-            }
-
-			executeCommand(String.format("mocap playback start .%s '%s' %s %s", playerSceneName, playerNickname, skin_from, playerSkin.value));
 		});
 
-		loopIteration++;
+		// Start mocap scene + voice playback for all players
+		startPlaybackForAllPlayers();
+
 		config.loopIteration = loopIteration;
 		config.save();
 		LOOP_LOGGER.info("Completed loop iteration {}", loopIteration - 1);
@@ -239,19 +258,25 @@ public class TimeLoop {
 		if (showLoopInfo) {
 			loopBossBar.visible(loopType.equals(LoopTypes.TICKS) || loopType.equals(LoopTypes.TIME_OF_DAY));
 		}
-		
+
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
 			Player player = server.getPlayerList().getPlayerByName(playerName);
+			if (player == null) {
+				LOOP_LOGGER.warn("Cannot initialize loop for offline player: {}", playerName);
+				return;
+			}
 
 			HolderLookup.Provider provider = server.registryAccess();
 
 			CompoundTag invTag = saveFullInventory(player, provider);
     		playerData.setInventoryTag(invTag);
 
-			playerData.setStartPosition(server.getPlayerList().getPlayerByName(playerName).position());
+			playerData.setStartPosition(player.position());
+			playerData.setStartDimensionKey(player.level().dimension());
+			playerData.setLastDimensionKey(player.level().dimension());
 		});
 
         startTimeOfDay = serverLevel.getDayTime();
@@ -259,70 +284,144 @@ public class TimeLoop {
 		config.isLooping = true;
 		tickCounter = 0;
 		ticksLeft = loopLengthTicks;
+		playbackStartedThisIteration = false;
 		LOOP_LOGGER.info("Starting Loop");
 		startRecordings();
 	}
 
 	/**
-	 * Starts the recordings.
+	 * Starts the recordings via the mocap API.
 	 */
 	public static void startRecordings() {
-		// Start recording for every player
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
             if (!playerData.getActive()) return;
 
 			String playerName = playerData.getName();
-            playerData.resetActiveRecordingIndex();
-            playerData.resetTempOffsets();
-			executeCommand(String.format("mocap recording start %s", playerName));
+			playerData.resetActiveRecordingIndex();
+			playerData.resetTempOffsets();
+			playerData.resetSegments();
+
+			ServerPlayer player = server.getPlayerList().getPlayerByName(playerName);
+			if (player == null) {
+				LOOP_LOGGER.warn("Cannot start recording for offline player: {}", playerName);
+				return;
+			}
+
+			MocapRecordingConfig recConfig = MocapRecordingConfig.createFromSettings();
+			MocapActiveRecording recording = mocapController.startRecording(player, recConfig, true);
+			if (recording != null) {
+				activeRecordings.put(playerName, recording);
+				LOOP_LOGGER.info("Started mocap recording for player: {}", playerName);
+			} else {
+				LOOP_LOGGER.error("Failed to start mocap recording for player: {}", playerName);
+			}
 		});
 	}
 
 	/**
-	 * Saves the recordings.
+	 * Saves the recordings via the mocap API for all active players.
 	 */
 	public static void saveRecordings() {
-        // Stop and save recordings for each player
-        loopSceneManager.forEachRecordingPlayer(playerData -> {
-            if (!playerData.getActive()) return;
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			if (!playerData.getActive()) return;
+			saveRecordingForPlayer(playerData);
+		});
+	}
 
-            String playerName = playerData.getName();
-            String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+	/**
+	 * Saves <b>all</b> mocap recordings for a single player and adds them to
+	 * the player's scene file.
+	 */
+	public static void saveRecordingForPlayer(PlayerData playerData) {
+		CommandOutput out = CommandOutput.LOGS;
+		String playerName = playerData.getName();
+		String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
 
-            int totalSegments = playerData.getActiveRecordingIndex();
-            int lastSegmentIndex = totalSegments;
+		MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
+		if (sceneFile == null || !sceneFile.exists()) {
+			LOOP_LOGGER.error("Scene file '{}' not found for player: {}", playerSceneName, playerName);
+			return;
+		}
 
-            // Iterate and save ALL active recording segments based on the index tracked in PlayerData.
-            for (int i = 1; i <= totalSegments; i++) {
-                String recordingToProcess = String.format("-+mc.%s.%d", playerName, i);
-                String recordingName = String.format("%s_loop%d_idx%d", playerName.toLowerCase(), loopIteration, i);
+		ArrayList<Float> offsets = playerData.getTempOffsets();
+		int recordingIndex = 0;
 
-                LOOP_LOGGER.info("Processing active recording segment {} for player: {}", i, playerName);
+		// ── 1. Save the primary recording FIRST ──────────────────────────────
+		MocapActiveRecording primaryRec = activeRecordings.remove(playerName);
+		if (primaryRec != null && primaryRec.isValid()) {
+			RecordingContext primaryCtx = ((ActiveRecording) primaryRec).ctx;
+			primaryCtx.stop(out);
+			
+			if (primaryCtx.state == RecordingContext.State.WAITING_FOR_DECISION) {
+				String recordingName = String.format("%s_loop%d", playerName.toLowerCase(), loopIteration);
+				MocapRecordingFile savedFile = primaryRec.save(out, recordingName);
+				if (savedFile != null) {
+					float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
+					sceneFile.add(out, savedFile, buildDelayModifiers(delay));
+					LOOP_LOGGER.info("Saved '{}' to scene '{}' with delay {}s",
+							recordingName, playerSceneName, delay);
+					recordingIndex++;
+				} else {
+					LOOP_LOGGER.error("Failed to save primary recording '{}' for player: {}",
+							recordingName, playerName);
+				}
+			} else {
+				LOOP_LOGGER.warn("Primary recording for '{}' failed to stop properly (state: {}). Skipping save.", playerName, primaryCtx.state);
+			}
+		} else {
+			LOOP_LOGGER.warn("No primary mocap recording found for player: {}", playerName);
+		}
 
-                // If this is the currently recording segment, we must first STOP it.
-                // If it's an earlier segment, it's already in the 'waiting for decision' state
-                // (due to the dimension split), so a second 'stop' would DISCARD it.
-                if (i == lastSegmentIndex) {
-                    // Manually stop the currently active recording (e.g., -+mc.Dev.2 or -+mc.Dev.1 if no split)
-                    // This puts it into the 'waiting for decision' state.
-                    LOOP_LOGGER.info("Stopping final segment: {}", recordingToProcess);
-                    executeCommand(String.format("mocap recording stop %s", recordingToProcess));
-                } else {
-                    // If it's not the last segment, it's already in 'waiting for decision' from the split.
-                    LOOP_LOGGER.info("Segment {} assumed to be in 'waiting' state from dimension split.", i);
-                }
+		// ── 2. Find and save split recording contexts ──────────────────────
+		List<RecordingContext> splitContexts = new ArrayList<>();
+		for (RecordingContext ctx : new ArrayList<>(RecordingManager.allContexts())) {
+			if (!ctx.source.name.equals("+timeloop")) continue;
+			if (!ctx.recordedPlayer.getName().getString().equals(playerName)) continue;
+			if (ctx.isRemoved()) continue;
+			splitContexts.add(ctx);
+		}
 
-                // Now, run the SAVE command on the segment that is in the 'waiting for decision' state.
-                executeCommand(String.format("mocap recording save %s %s", recordingName.toLowerCase(), recordingToProcess));
+		for (RecordingContext ctx : splitContexts) {
+			ctx.stop(out);
+			if (ctx.state != RecordingContext.State.WAITING_FOR_DECISION) {
+				LOOP_LOGGER.warn("Split context for {} in unexpected state: {}, skipping",
+						playerName, ctx.state);
+				continue;
+			}
 
-                executeCommand(String.format("mocap scenes add_to .%s %s", playerSceneName, recordingName.toLowerCase()));
+			MocapActiveRecording splitRec = ActiveRecording.get(ctx);
+			String recordingName = String.format("%s_loop%d_%d",
+					playerName.toLowerCase(), loopIteration, recordingIndex + 1);
 
-                playerData.incrementActiveSubsceneIndex();
+			MocapRecordingFile savedFile = splitRec.save(out, recordingName);
+			if (savedFile != null) {
+				float delay = (recordingIndex < offsets.size()) ? offsets.get(recordingIndex) : 0f;
+				sceneFile.add(out, savedFile, buildDelayModifiers(delay));
+				LOOP_LOGGER.info("Saved split '{}' to scene '{}' with delay {}s",
+						recordingName, playerSceneName, delay);
+				recordingIndex++;
+			} else {
+				LOOP_LOGGER.error("Failed to save split recording '{}' for player: {}",
+						recordingName, playerName);
+			}
+		}
 
-                String subsceneName = String.format("%03d-%s", playerData.getActiveSubsceneIndex(), recordingName);
-                executeCommand(String.format("mocap scenes modify .%s %s time start_delay %s", playerSceneName, subsceneName, playerData.getTempOffset(i - 1)));
-            }
-        });
+		if (recordingIndex == 0) {
+			LOOP_LOGGER.warn("No recordings saved for player: {}", playerName);
+		}
+	}
+
+	/**
+	 * Builds a {@link MocapModifiers} with a start delay, or empty if delay is zero.
+	 */
+	private static MocapModifiers buildDelayModifiers(float delaySeconds) {
+		MocapModifiers modifiers = MocapModifiers.empty();
+		if (delaySeconds > 0f) {
+			MocapTimeModifiers timeMods = modifiers.getTimeModifiers()
+					.withStartDelay(MocapTime.fromSeconds(delaySeconds));
+			modifiers = modifiers.withTimeModifiers(timeMods);
+		}
+		return modifiers;
 	}
 
 	/**
@@ -331,6 +430,13 @@ public class TimeLoop {
 	public static void stopLoop() {
 		if (isLooping) {
 			LOOP_LOGGER.info("Stopping loop");
+
+			// Save voice audio to disk FIRST (synchronously!) before anything is torn down.
+			try {
+				VoicechatCompat.saveAudio().get(10, java.util.concurrent.TimeUnit.SECONDS);
+			} catch (Exception e) {
+				LOOP_LOGGER.error("Voice audio save failed or timed out during stopLoop", e);
+			}
 
 			isLooping = false;
             config.isLooping = false;
@@ -344,13 +450,74 @@ public class TimeLoop {
 			loopBossBar.visible(false);
 			saveRecordings();
 			loopSceneManager.saveRecordingPlayers();
-			executeCommand("mocap playback stop_all including_others");
+			PlaybackManager.stopAll(CommandOutput.DUMMY, null);
+            VoicechatCompat.stopPlayback(null);
+			VoicechatInteractionCompat.clearCooldowns();
+			config.save();
 			LOOP_LOGGER.info("Loop stopped!");
 		}
 	}
 
+	/**
+	 * Starts mocap scene playback and voice playback for all recording players
+	 * that have previous iterations.
+	 */
+	public static void startPlaybackForAllPlayers() {
+		if (loopIteration <= 0) return;
+
+		LOOP_LOGGER.info("Starting playback for all players (iteration {})", loopIteration);
+
+		CommandInfo info = getMocapCommandInfo();
+
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			String playerName = playerData.getName();
+			String playerNickname = playerData.getNickname();
+			Skin playerSkin = playerData.getSkin();
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerName);
+
+			MocapPlayerSkin mocapSkin = switch (playerSkin.skinType) {
+				case MINESKIN -> MocapPlayerSkin.fromMineSkin(playerSkin.value);
+				case FILE -> MocapPlayerSkin.fromFile(playerSkin.value);
+				default -> MocapPlayerSkin.fromPlayer(playerSkin.value);
+			};
+			MocapModifiers modifiers = MocapModifiers.playerName(playerNickname)
+					.withPlayerSkin(mocapSkin);
+
+			MocapSceneFile sceneFile = SceneFile.get(CommandOutput.LOGS, playerSceneName);
+			if (sceneFile != null && sceneFile.exists()) {
+				try {
+					sceneFile.startPlayback(info, modifiers);
+					LOOP_LOGGER.info("Started mocap playback for scene '{}' as '{}'", playerSceneName, playerNickname);
+				} catch (Exception e) {
+					LOOP_LOGGER.error("Failed to start mocap playback for scene '{}': {}", playerSceneName, e.getMessage(), e);
+				}
+
+				var entities = VoicechatCompat.findAllMocapEntities(playerNickname);
+				LOOP_LOGGER.info("Found {} mocap entities for '{}'", entities.size(), playerNickname);
+
+				List<String> elementNames = new ArrayList<>();
+				var elements = sceneFile.getAll(CommandOutput.LOGS);
+				if (elements != null) {
+					for (var elem : elements) {
+						elementNames.add(elem.getName());
+					}
+				}
+
+				VoicechatCompat.onStartPlayback(playerData, entities, elementNames);
+			} else {
+				LOOP_LOGGER.warn("Scene file '{}' not found, skipping playback for player: {}", playerSceneName, playerName);
+			}
+		});
+
+		playbackStartedThisIteration = true;
+	}
+
 	public static void modifyPlayerAttributes(String targetPlayerName, String newPlayerNickname, Skin newSkin) {
         PlayerData targetPlayer = loopSceneManager.getRecordingPlayer(targetPlayerName);
+        if (targetPlayer == null) {
+            LOOP_LOGGER.error("Cannot modify attributes: player '{}' not found in recording players", targetPlayerName);
+            return;
+        }
 
         targetPlayer.setNickname(newPlayerNickname);
         targetPlayer.setSkin(newSkin);
@@ -359,16 +526,14 @@ public class TimeLoop {
 
 	/**
 	 * Updates the entities to be tracked for recording and playback settings.
-	 * This method modifies the entities being tracked based on the specified parameter,
-	 * enabling or disabling item tracking.
-	 *
-	 * @param items A boolean value. If true, includes items in the tracking list.
-	 *              If false, excludes items and tracks only vehicles.
 	 */
 	public static void updateEntitiesToTrack(boolean items) {
+		if (mocapController == null) return;
 		String entitiesToTrack = "@vehicles" + (items ? ";@items" : "");
-		executeCommand(String.format("mocap settings recording track_entities %s", entitiesToTrack));
-		executeCommand(String.format("mocap settings playback play_entities %s", entitiesToTrack));
+		int distance = items ? entityTrackingDistance : 1;
+		mocapController.setSetting("track_entities", entitiesToTrack);
+		mocapController.setSetting("play_entities", entitiesToTrack);
+		mocapController.setSetting("entity_tracking_distance", String.valueOf(distance));
 	}
 
 	public static void updateInfoBar(int time, int timeLeft) {
@@ -380,81 +545,105 @@ public class TimeLoop {
 		}
 	}
 
-    public static void removeRecording(String recording) {
-        try {
-            Path recordingPath = worldFolder.resolve("mocap_files").resolve("recordings").resolve(recording + ".mcmocap_rec");
-            Files.delete(recordingPath);
-            LOOP_LOGGER.info("Deleted recording at {}", recordingPath);
-        } catch (IOException e) {
-            LOOP_LOGGER.error("Error deleting recording {}", recording);
-        }
-    }
+	/**
+	 * Deletes a recording file directly from disk.
+	 */
+	public static void removeRecording(String recording) {
+		try {
+			Path recordingPath = worldFolder.resolve("mocap_files").resolve("recordings").resolve(recording + ".mcmocap_rec");
+			Files.delete(recordingPath);
+			LOOP_LOGGER.info("Deleted recording file at {}", recordingPath);
+		} catch (IOException e) {
+			LOOP_LOGGER.error("Error deleting recording file '{}'", recording);
+		}
+	}
+
+	/**
+	 * Deletes all mocap recording files belonging to any recording player.
+	 * Scans the recordings directory for files matching the {@code <name>_loop*} pattern.
+	 */
+	public static void removeAllRecordings() {
+		Path recordingsDir = worldFolder.resolve("mocap_files").resolve("recordings");
+		if (!Files.isDirectory(recordingsDir)) return;
+
+		Set<String> playerPrefixes = new java.util.HashSet<>();
+		loopSceneManager.forEachRecordingPlayer(pd ->
+				playerPrefixes.add(pd.getName().toLowerCase() + "_loop"));
+
+		try (var stream = Files.newDirectoryStream(recordingsDir, "*.mcmocap_rec")) {
+			for (Path file : stream) {
+				String fileName = file.getFileName().toString();
+				String stem = fileName.substring(0, fileName.length() - ".mcmocap_rec".length());
+				for (String prefix : playerPrefixes) {
+					if (stem.startsWith(prefix)) {
+						try {
+							Files.delete(file);
+							LOOP_LOGGER.info("Deleted recording file: {}", file);
+						} catch (IOException e) {
+							LOOP_LOGGER.error("Failed to delete recording file: {}", file);
+						}
+						break;
+					}
+				}
+			}
+		} catch (IOException e) {
+			LOOP_LOGGER.error("Failed to scan recordings directory for cleanup", e);
+		}
+	}
 
 	/**
 	 * Removes outdated entries from the scene file to ensure the number of subscenes does not exceed the maximum allowed loops.
-	 * The method checks if there are more recorded subscenes in the scene file than the value specified by maxLoops. If so,
-	 * it removes the oldest entries to maintain the desired number. The updated data is then saved back to the file.
 	 */
 	private static void removeOldSceneEntries() {
-		if (maxLoops >= 1 && (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST || maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) && (loopIteration + 1) > maxLoops) {
-			Path scenesDir = worldFolder.resolve("mocap_files").resolve("scenes");
+		if (maxLoops < 1) return;
+		if (maxLoopsType != MaxLoopsTypes.KEEP_NEWEST && maxLoopsType != MaxLoopsTypes.KEEP_NEWEST_DELETE) return;
+		if ((loopIteration + 1) <= maxLoops) return;
 
-			List<Path> sceneFiles = new ArrayList<>();
-			loopSceneManager.forEachRecordingPlayer(playerData -> {
-				String playerSceneName = loopSceneManager.getPlayerSceneName(playerData.getName());
-				if (playerSceneName != null && !playerSceneName.isBlank()) {
-					sceneFiles.add(scenesDir.resolve(playerSceneName + ".mcmocap_scene"));
-				} else {
-					LOOP_LOGGER.warn("Invalid playerSceneName encountered: {}", playerSceneName);
-				}
-			});
+		CommandOutput out = CommandOutput.LOGS;
+		int entriesToRemove = loopIteration - maxLoops;
 
-			if (sceneFiles.isEmpty()) {
-				LOOP_LOGGER.warn("No scene files found to process.");
-			}
+		loopSceneManager.forEachRecordingPlayer(playerData -> {
+			String playerSceneName = loopSceneManager.getPlayerSceneName(playerData.getName());
+			if (playerSceneName == null || playerSceneName.isBlank()) return;
 
-			for (Path sceneFile : sceneFiles) {
-				if (sceneFile.toFile().exists()) {
-					try {
-						String jsonContent = new String(Files.readAllBytes(sceneFile));
-						JsonParser parser = new JsonParser();
-						JsonObject jsonObject = parser.parse(jsonContent).getAsJsonObject();
-						JsonArray subScenes = jsonObject.getAsJsonArray("subscenes");
+			MocapSceneFile sceneFile = SceneFile.get(out, playerSceneName);
+			if (sceneFile == null || !sceneFile.exists()) return;
 
-						if (subScenes.size() > maxLoops) {
-							int entriesToRemove = loopIteration - maxLoops;
-							JsonArray newSubScenes = new JsonArray();
-                            for (int subsceneIndex = subScenes.size() - 1; subsceneIndex >= 0; subsceneIndex--) {
-                                JsonElement subScene = subScenes.get(subsceneIndex);
-                                String subSceneName = subScene.getAsJsonObject().get("name").getAsString();
-                                String[] subSceneNameSplit = subSceneName.split("_");
+			List<? extends MocapSceneElement> elements = sceneFile.getAll(out);
+			if (elements == null || elements.size() <= maxLoops) return;
 
-                                PlayerData playerData = loopSceneManager.getRecordingPlayer(subSceneNameSplit[0]);
-                                if (playerData != null) {
-                                    playerData.setActiveSubsceneIndex(maxLoops);
-
-                                    int _loopIteration = Integer.parseInt(subSceneNameSplit[subSceneNameSplit.length - 2].split("loop")[1]);
-
-                                    if (_loopIteration > entriesToRemove) {
-                                        newSubScenes.add(subScene);
-                                    } else if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE){
-                                        removeRecording(subSceneName);
-                                    }
-                                }
-                            }
-                            jsonObject.remove("subscenes");
-							jsonObject.add("subscenes", newSubScenes);
-							Files.write(sceneFile, jsonObject.toString().getBytes());
-							LOOP_LOGGER.info("Removed old scene entries for file: {}", sceneFile);
+			List<MocapSceneElement> toKeep = new ArrayList<>();
+			for (MocapSceneElement element : elements) {
+				String name = element.getName();
+				String[] parts = name.split("_");
+				try {
+					int elemLoop = -1;
+					for (String part : parts) {
+						if (part.startsWith("loop")) {
+							elemLoop = Integer.parseInt(part.substring(4));
+							break;
 						}
-					} catch (IOException e) {
-						LOOP_LOGGER.error("Failed to process scene file: {}", sceneFile, e);
 					}
-				} else {
-					LOOP_LOGGER.error("Scene file does not exist: {}", sceneFile);
+					if (elemLoop > entriesToRemove) {
+						toKeep.add(element);
+					} else {
+						if (maxLoopsType == MaxLoopsTypes.KEEP_NEWEST_DELETE) {
+							removeRecording(name);
+						}
+						if (elemLoop >= 0) {
+							playerData.removeAudio(elemLoop);
+							AudioPersistence.deleteIterationAudio(playerData.getName(), elemLoop);
+						}
+					}
+				} catch (NumberFormatException e) {
+					toKeep.add(element);
 				}
 			}
-		}
+
+			sceneFile.replaceAll(out, toKeep);
+			LOOP_LOGGER.info("Trimmed scene '{}': kept {} of {} entries",
+					playerSceneName, toKeep.size(), elements.size());
+		});
 	}
 
 	/**
@@ -472,53 +661,129 @@ public class TimeLoop {
         return ticks / 20f;
     }
 
-	public static CompoundTag saveFullInventory(Player player, HolderLookup.Provider provider) {
-		CompoundTag tag = new CompoundTag();
+    private static final EquipmentSlot[] ARMOR_SLOTS = new EquipmentSlot[] {
+            EquipmentSlot.FEET,
+            EquipmentSlot.LEGS,
+            EquipmentSlot.CHEST,
+            EquipmentSlot.HEAD
+    };
 
-		// Main inventory
-		ListTag main = new ListTag();
-		for (ItemStack stack : player.getInventory().items) {
-			main.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("main", main);
+    private static CompoundTag stackToNbt(ItemStack stack, HolderLookup.Provider provider) {
+        if (stack.isEmpty()) {
+            return new CompoundTag();
+        }
 
-		// Armor
-		ListTag armor = new ListTag();
-		for (ItemStack stack : player.getInventory().armor) {
-			armor.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("armor", armor);
+        DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-		// Offhand
-		ListTag offhand = new ListTag();
-		for (ItemStack stack : player.getInventory().offhand) {
-			offhand.add(stack.isEmpty() ? new CompoundTag() : stack.save(provider, new CompoundTag()));
-		}
-		tag.put("offhand", offhand);
+        Tag resultTag = ItemStack.CODEC.encodeStart(ops, stack)
+                .getOrThrow(error -> new IllegalStateException("Failed to encode ItemStack: " + error));
 
-		return tag;
-	}
+        return (CompoundTag) resultTag;
+    }
 
-	public static void loadFullInventory(Player player, CompoundTag tag, HolderLookup.Provider provider) {
-		// Main inventory
-		ListTag main = tag.getList("main", 10);
-		for (int i = 0; i < player.getInventory().items.size(); i++) {
-			CompoundTag itemTag = i < main.size() ? main.getCompound(i) : new CompoundTag();
-			player.getInventory().items.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
+    private static ItemStack stackFromNbt(CompoundTag itemTag, HolderLookup.Provider provider) {
+        if (itemTag.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
 
-		// Armor
-		ListTag armor = tag.getList("armor", 10);
-		for (int i = 0; i < player.getInventory().armor.size(); i++) {
-			CompoundTag itemTag = i < armor.size() ? armor.getCompound(i) : new CompoundTag();
-			player.getInventory().armor.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
+        DynamicOps<Tag> ops = provider.createSerializationContext(NbtOps.INSTANCE);
 
-		// Offhand
-		ListTag offhand = tag.getList("offhand", 10);
-		for (int i = 0; i < player.getInventory().offhand.size(); i++) {
-			CompoundTag itemTag = i < offhand.size() ? offhand.getCompound(i) : new CompoundTag();
-			player.getInventory().offhand.set(i, itemTag.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(provider, itemTag));
-		}
-	}
+        return ItemStack.CODEC.parse(ops, itemTag)
+                .result().orElse(ItemStack.EMPTY);
+    }
+
+    public static CompoundTag saveFullInventory(Player player, HolderLookup.Provider provider) {
+        CompoundTag tag = new CompoundTag();
+        Inventory inventory = player.getInventory();
+
+        // 1. Main inventory (Slots 0-35)
+        ListTag main = new ListTag();
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = inventory.getItem(i); // Use getItem(index)
+
+            main.add(stackToNbt(stack, provider)); // Use Codec helper
+        }
+        tag.put("main", main);
+
+        // 2. Armour (Iterate using the explicit, fixed array)
+        ListTag armor = new ListTag();
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot); // Use player.getItemBySlot()
+
+            armor.add(stackToNbt(stack, provider)); // Use Codec helper
+        }
+        tag.put("armor", armor);
+
+        // 3. Offhand (Single slot)
+        ListTag offhand = new ListTag();
+        ItemStack offhandStack = player.getItemBySlot(EquipmentSlot.OFFHAND);
+
+        offhand.add(stackToNbt(offhandStack, provider)); // Use Codec helper
+        tag.put("offhand", offhand);
+
+        return tag;
+    }
+
+    public static void loadFullInventory(Player player, CompoundTag tag, HolderLookup.Provider provider) {
+        Inventory inventory = player.getInventory();
+
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        // We use .orElseGet(ListTag::new) to handle the Optional and missing tag.
+        ListTag main = tag.getList("main").orElseGet(ListTag::new);
+
+        // 1. Main inventory
+        for (int i = 0; i < 36; i++) {
+
+            // FIX 2: ListTag.getCompound(i) returns Optional<CompoundTag>.
+            // We check bounds and unwrap the Optional, defaulting to a new empty tag.
+            Optional<CompoundTag> optionalItemTag = i < main.size()
+                    ? main.getCompound(i)
+                    : Optional.empty();
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper to handle ItemStack deserialization.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            inventory.setItem(i, stack);
+        }
+
+        // 2. Armour (Load using the explicit, fixed array)
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        ListTag armor = tag.getList("armor").orElseGet(ListTag::new);
+
+        for (int i = 0; i < ARMOR_SLOTS.length; i++) {
+            EquipmentSlot slot = ARMOR_SLOTS[i];
+
+            // FIX 2: ListTag.getCompound(i) returns Optional<CompoundTag>.
+            Optional<CompoundTag> optionalItemTag = i < armor.size()
+                    ? armor.getCompound(i)
+                    : Optional.empty();
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            player.setItemSlot(slot, stack);
+        }
+
+        // 3. Offhand (Single slot)
+        // FIX 1: CompoundTag.getList(String key) now returns Optional<ListTag>.
+        ListTag offhand = tag.getList("offhand").orElseGet(ListTag::new);
+
+        if (!offhand.isEmpty()) {
+            // FIX 2: ListTag.getCompound(0) returns Optional<CompoundTag>.
+            Optional<CompoundTag> optionalItemTag = offhand.getCompound(0);
+
+            CompoundTag itemTag = optionalItemTag.orElseGet(CompoundTag::new);
+
+            // FIX 3: Use stackFromNbt helper.
+            ItemStack stack = stackFromNbt(itemTag, provider);
+
+            player.setItemSlot(EquipmentSlot.OFFHAND, stack);
+        } else {
+            player.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        }
+    }
 }

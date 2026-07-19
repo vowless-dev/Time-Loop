@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -16,6 +17,9 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerWakeUpEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.gameevent.GameEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +31,24 @@ public class TimeLoopNeoForge {
 
     public TimeLoopNeoForge(IEventBus modEventBus) {
         LOOP_LOGGER.info("Initializing TimeLoop mod (NeoForge)");
-        
+
+        ModList modList = ModList.get();
+        TimeLoop.voiceChatLoaded = modList.isLoaded("voicechat");
+        TimeLoop.voiceInteractionLoaded = modList.isLoaded("vcinteraction");
+
+        LOOP_LOGGER.info("Mod detection \u2014 voicechat: {}, vcinteraction: {}",
+                TimeLoop.voiceChatLoaded, TimeLoop.voiceInteractionLoaded);
+
+        // Register our own voice GameEvent (timeloop:voice) only when
+        // voicechat-interaction is installed. When vcinteraction is NOT
+        // installed, we skip registration — no sculk/warden interaction.
+        if (TimeLoop.voiceInteractionLoaded) {
+            DeferredRegister<GameEvent> gameEvents =
+                    DeferredRegister.create(Registries.GAME_EVENT, "timeloop");
+            gameEvents.register("voice", () -> new GameEvent(16));
+            gameEvents.register(modEventBus);
+        }
+
         TimeLoop.init();
 
         // Register gameplay event listeners to the NeoForge EVENT bus
@@ -99,7 +120,9 @@ public class TimeLoopNeoForge {
     // Player Respawn handler
     @SubscribeEvent
     public void afterRespawn(PlayerEvent.PlayerRespawnEvent event) {
-        PlayerNeoForgeEvent.afterRespawn();
+        if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            PlayerNeoForgeEvent.afterRespawn(serverPlayer);
+        }
     }
 
     @SubscribeEvent

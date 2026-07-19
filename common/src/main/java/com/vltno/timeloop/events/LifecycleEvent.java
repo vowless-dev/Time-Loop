@@ -2,9 +2,16 @@ package com.vltno.timeloop.events;
 
 import com.vltno.timeloop.LoopSceneManager;
 import com.vltno.timeloop.TimeLoopConfig;
+import com.vltno.timeloop.compat.VoicechatInteractionCompat;
+import com.vltno.timeloop.compat.VoicechatCompat;
 import net.minecraft.server.MinecraftServer;
 import com.vltno.timeloop.TimeLoop;
 import net.minecraft.world.level.storage.LevelResource;
+import net.mt1006.mocap.api.impl.controller.MocapControllerImpl;
+import net.mt1006.mocap.api.v1.MocapAPI;
+import net.mt1006.mocap.api.v1.controller.MocapController;
+import net.mt1006.mocap.api.v1.io.CommandOutput;
+import net.mt1006.mocap.mocap.files.SceneFiles;
 
 public class LifecycleEvent {
     public static void onServerStart(MinecraftServer server)
@@ -30,11 +37,20 @@ public class LifecycleEvent {
         TimeLoop.showLoopInfo = TimeLoop.config.showLoopInfo;
         TimeLoop.displayTimeInTicks = TimeLoop.config.displayTimeInTicks;
         TimeLoop.trackItems = TimeLoop.config.trackItems;
+        TimeLoop.entityTrackingDistance = TimeLoop.config.entityTrackingDistance;
         TimeLoop.loopType = TimeLoop.config.loopType;
         TimeLoop.trackChat = TimeLoop.config.trackChat;
         TimeLoop.hurtLoopedPlayers = TimeLoop.config.hurtLoopedPlayers;
         TimeLoop.rewindType = TimeLoop.config.rewindType;
         TimeLoop.trackInventory = TimeLoop.config.trackInventory;
+
+        // Voice interaction settings
+        TimeLoop.voiceInteractionEnabled = TimeLoop.config.voiceInteractionEnabled;
+        TimeLoop.voiceInteractionThresholdDb = TimeLoop.config.voiceInteractionThresholdDb;
+        TimeLoop.voiceInteractionCooldownTicks = TimeLoop.config.voiceInteractionCooldownTicks;
+        TimeLoop.voiceAudioDistance = TimeLoop.config.voiceAudioDistance;
+        TimeLoop.showPlayerVoiceIcon = TimeLoop.config.showPlayerVoiceIcon;
+        TimeLoop.trackVoice = TimeLoop.config.trackVoice;
 
         TimeLoop.loopSceneManager.setRecordingPlayers(TimeLoop.config.recordingPlayers);
 
@@ -46,44 +62,87 @@ public class LifecycleEvent {
             TimeLoop.loopBossBar.visible(false);
         }
         
-        TimeLoop.executeCommand("mocap settings advanced experimental_release_warning false");
-        TimeLoop.executeCommand("mocap settings playback start_as_recorded true");
-        TimeLoop.executeCommand("mocap settings recording assign_player_name true");
-        TimeLoop.executeCommand("mocap settings recording start_instantly true");
-        TimeLoop.executeCommand("mocap settings recording on_death continue_synced");
-        TimeLoop.executeCommand("mocap settings recording on_change_dimension split_recording");
-        TimeLoop.executeCommand("mocap settings recording chat_recording " + TimeLoop.trackChat);
-        TimeLoop.executeCommand("mocap settings playback invulnerable_playback " + !TimeLoop.hurtLoopedPlayers);
-        TimeLoop.executeCommand("mocap settings advanced use_creative_game_mode " + !TimeLoop.hurtLoopedPlayers);
-        TimeLoop.executeCommand("mocap settings recording entity_tracking_distance 1");
-        TimeLoop.executeCommand("mocap settings playback hit_range 1");
+        // Create the mocap API controller (must happen after MocapMod has initialized)
+        MocapAPI.executeAfterInit(() -> {
+            // Workaround: MocapAPI.createController() has an inverted condition bug
+            // (checks `if (Files.checkIfProperName(...))` instead of `if (!Files.checkIfProperName(...))`)
+            // so it rejects ALL valid names. Instantiate the impl class directly.
+            TimeLoop.mocapController = new MocapControllerImpl(server, "timeloop");
+            if (TimeLoop.mocapController == null) {
+                TimeLoop.LOOP_LOGGER.error("Failed to create MocapController!");
+                return;
+            }
 
-        TimeLoop.updateEntitiesToTrack(TimeLoop.trackItems);
+            MocapController mc = TimeLoop.mocapController;
 
-        try {
-            TimeLoop.loopSceneManager.forEachPlayerSceneName(playerSceneName -> TimeLoop.executeCommand(String.format("mocap scenes add %s", playerSceneName)));
-        } catch (Exception e) {
-            TimeLoop.LOOP_LOGGER.error("Failed to add player scenes to mocap scenes: {}", e.getMessage(), e);
-        }
+            // Configure mocap settings via the API
+            mc.setSetting("experimental_release_warning", "false");
+            mc.setSetting("start_as_recorded", "true");
+            mc.setSetting("assign_player_name", "true");
+            mc.setSetting("start_instantly", "true");
+            mc.setSetting("on_death", "continue_synced");
+            mc.setSetting("on_change_dimension", "split_recording");
+            mc.setSetting("chat_recording", String.valueOf(TimeLoop.trackChat));
+            mc.setSetting("invulnerable_playback", String.valueOf(!TimeLoop.hurtLoopedPlayers));
+            mc.setSetting("use_creative_game_mode", String.valueOf(!TimeLoop.hurtLoopedPlayers));
+            mc.setSetting("entity_tracking_distance", "1");
+            mc.setSetting("hit_range", "1");
+
+            // updateEntitiesToTrack sets both the entity list AND the tracking distance
+            TimeLoop.updateEntitiesToTrack(TimeLoop.trackItems);
+
+            // Ensure player scene files exist
+            try {
+                TimeLoop.loopSceneManager.forEachPlayerSceneName(sceneName -> {
+                    SceneFiles.add(CommandOutput.LOGS, sceneName);
+                });
+            } catch (Exception e) {
+                TimeLoop.LOOP_LOGGER.error("Failed to create player scenes: {}", e.getMessage(), e);
+            }
+
+            TimeLoop.LOOP_LOGGER.info("Mocap API controller initialized");
+        });
+
+        // Resolve the vcinteraction game event from the registry (if vcinteraction is installed).
+        // This must happen after registries are frozen (i.e. during server start, not mod init).
+        VoicechatInteractionCompat.resolveGameEvent();
+
+        // Load saved voice audio from disk (async, populates PlayerData audio maps)
+        VoicechatCompat.loadAudio();
     }
 
     public static void onServerStopping()
     {
         if (TimeLoop.isLooping) {
+            // Capture loop progress BEFORE stopLoop() resets them
+            int savedTickCounter = TimeLoop.tickCounter;
+            int savedTicksLeft = TimeLoop.ticksLeft;
+            int savedIteration = TimeLoop.loopIteration;
+
+            // stopLoop() saves recordings + voice audio, resets counters
             TimeLoop.stopLoop();
+
+            // Restore the state so the loop resumes where it left off on next server start
             TimeLoop.config.isLooping = true;
-            TimeLoop.config.tickCounter = TimeLoop.tickCounter;
-            TimeLoop.config.ticksLeft = TimeLoop.ticksLeft;
-            
+            TimeLoop.config.tickCounter = savedTickCounter;
+            TimeLoop.config.ticksLeft = savedTicksLeft;
+            TimeLoop.config.loopIteration = savedIteration;
+
             if (TimeLoop.worldFolder != null) {
                 TimeLoop.config.save();
             }
         } else {
             // Ensure config is saved even if not looping, might have pending changes
-            if(TimeLoop.worldFolder != null) {
-                TimeLoop.config.isLooping = false; // Ensure it saves as not looping
+            if (TimeLoop.worldFolder != null) {
+                TimeLoop.config.isLooping = false;
                 TimeLoop.config.save();
             }
         }
+
+        // Clean up voice interaction cooldowns
+        VoicechatInteractionCompat.clearCooldowns();
+
+        // Shut down voice chat thread pools and persistence
+        VoicechatCompat.shutdown();
     }
 }
