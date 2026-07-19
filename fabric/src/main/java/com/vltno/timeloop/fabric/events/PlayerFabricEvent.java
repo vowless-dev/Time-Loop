@@ -6,7 +6,7 @@ import com.vltno.timeloop.events.PlayerEvent;
 
 public class PlayerFabricEvent {
     public static void afterRespawn(ServerPlayer oldPlayer, ServerPlayer newPlayer, boolean alive) {
-        PlayerEvent.afterRespawn();
+        PlayerEvent.afterRespawn(newPlayer);
     }
 
     public static void dimensionChange(ServerPlayer player, ServerLevel origin, ServerLevel destination) {

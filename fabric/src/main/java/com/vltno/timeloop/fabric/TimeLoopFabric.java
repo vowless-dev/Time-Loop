@@ -11,6 +11,11 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.gameevent.GameEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +26,27 @@ public class TimeLoopFabric implements ModInitializer {
     @Override
     public void onInitialize() {
         LOOP_LOGGER.info("Initializing TimeLoop mod (Fabric)");
+
+        FabricLoader loader = FabricLoader.getInstance();
+
+        TimeLoop.voiceChatLoaded = loader.isModLoaded("voicechat");
+        TimeLoop.voiceInteractionLoaded = loader.isModLoaded("vcinteraction");
+
+        LOOP_LOGGER.info("Mod detection — voicechat: {}, vcinteraction: {}",
+                TimeLoop.voiceChatLoaded, TimeLoop.voiceInteractionLoaded);
+
+        // Register our own voice GameEvent (timeloop:voice) only when
+        // voicechat-interaction is installed. We reuse voiceinteraction's
+        // sculk frequency mapping for its event, but need our own event
+        // for replay entities. When vcinteraction is NOT installed,
+        // we skip registration entirely — no sculk/warden interaction.
+        if (TimeLoop.voiceInteractionLoaded) {
+            Registry.registerForHolder(
+                    BuiltInRegistries.GAME_EVENT,
+                    ResourceLocation.fromNamespaceAndPath("timeloop", "voice"),
+                    new GameEvent(16)
+            );
+        }
 
         TimeLoop.init();
 

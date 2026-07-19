@@ -7,6 +7,8 @@ repositories {
     mavenCentral()
     maven { url = "https://maven.parchmentmc.org/" }
     maven { url = "https://repo.spongepowered.org/repository/maven-public" }
+    maven { url = "https://maven.maxhenkel.de/repository/public" }
+    maven { url = "https://api.modrinth.com/maven" }
 }
 
 group = project.maven_group // Set group from root project
@@ -19,6 +21,10 @@ dependencies {
         officialMojangMappings()
         parchment("org.parchmentmc.data:parchment-${parchment_minecraft_version}:${parchment_version}@zip")
     }
+
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+
+    modCompileOnly "maven.modrinth:motion-capture:${mod_mocap_version}-fabric-${minecraft_version}"
 
     compileOnly "org.spongepowered:mixin:0.8.5:processor"
 }
