@@ -193,7 +193,7 @@ public final class VoicechatCompat {
                 TimeLoop.LOOP_LOGGER.debug(
                         "[Voice] {} speech regions for {} i{} s{} -> entity {}",
                         regions.size(), data.getName(), iter, seg,
-                        assignedEntity != null ? assignedEntity.level().dimension().location() : "null"
+                        assignedEntity != null ? assignedEntity.level().dimension().identifier() : "null"
                 );
 
                 // Schedule each speech region to start at the right tick

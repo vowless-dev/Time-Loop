@@ -14,7 +14,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.gameevent.GameEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +43,7 @@ public class TimeLoopFabric implements ModInitializer {
         if (TimeLoop.voiceInteractionLoaded) {
             Registry.registerForHolder(
                     BuiltInRegistries.GAME_EVENT,
-                    ResourceLocation.fromNamespaceAndPath("timeloop", "voice"),
+                    Identifier.fromNamespaceAndPath("timeloop", "voice"),
                     new GameEvent(16)
             );
         }
