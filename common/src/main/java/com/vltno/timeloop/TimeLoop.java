@@ -17,7 +17,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -203,7 +203,7 @@ public class TimeLoop {
                         ? server.getLevel(startDimKey)
                         : (ServerLevel) player.level();
                 if (targetLevel == null) targetLevel = (ServerLevel) player.level();
-                Set<Relative> absoluteMovement = Collections.emptySet();
+                Set<RelativeMovement> absoluteMovement = Collections.emptySet();
                 float yaw = player.getYRot();
                 float pitch = player.getXRot();
                 boolean setCamera = false;
@@ -234,7 +234,7 @@ public class TimeLoop {
                         teleportPosition = spawnPosition;
                     }
                 }
-                player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch, setCamera);
+                player.teleportTo(targetLevel, teleportPosition.x, teleportPosition.y, teleportPosition.z, absoluteMovement, yaw, pitch);
             }
             playerData.setLastDimensionKey(player.level().dimension());
 		});

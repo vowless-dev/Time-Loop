@@ -63,7 +63,7 @@ public final class VoicechatInteractionCompat {
 
         // Try vcinteraction's own event first (has proper sculk frequency mapping)
         ResourceLocation vcLoc = ResourceLocation.fromNamespaceAndPath("vcinteraction", "voice");
-        var vcHolder = BuiltInRegistries.GAME_EVENT.get(vcLoc);
+        var vcHolder = BuiltInRegistries.GAME_EVENT.getHolder(vcLoc);
         if (vcHolder.isPresent()) {
             voiceEvent = vcHolder.get();
             TimeLoop.LOOP_LOGGER.info("[Compat] Using vcinteraction:voice GameEvent for replay entities");
@@ -73,7 +73,7 @@ public final class VoicechatInteractionCompat {
 
         // Fall back to our own
         ResourceLocation tlLoc = ResourceLocation.fromNamespaceAndPath("timeloop", "voice");
-        var tlHolder = BuiltInRegistries.GAME_EVENT.get(tlLoc);
+        var tlHolder = BuiltInRegistries.GAME_EVENT.getHolder(tlLoc);
         if (tlHolder.isPresent()) {
             voiceEvent = tlHolder.get();
             TimeLoop.LOOP_LOGGER.info("[Compat] Using timeloop:voice GameEvent for replay entities");
