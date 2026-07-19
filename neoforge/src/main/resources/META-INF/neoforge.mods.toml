@@ -35,7 +35,7 @@ side="BOTH"
 
 [[dependencies.${mod_id}]]
 modId="voicechat_api"
-mandatory=false
+type="optional"
 versionRange="[${voicechat_api_version},)"
 ordering="AFTER"
 side="BOTH"
