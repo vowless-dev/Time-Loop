@@ -1,5 +1,6 @@
 package com.vltno.timeloop.commands;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -133,6 +134,10 @@ public class SettingsCommands {
                         .suggests((context, builder) -> CommandUtils.EnumSuggestion(builder, RewindTypes.class))
                         .executes(SettingsCommands::rewindType)));
         
+        //region voice
+        registerVoiceCommands(settingsNode);
+        //endregion
+
         TogglesCommands.register(settingsNode);
 
         parentBuilder.then(settingsNode);
@@ -200,10 +205,21 @@ public class SettingsCommands {
     }
 
     private static int modifyPlayer(CommandContext<CommandSourceStack> context, SkinTypes skinType) {
-        // TODO! - Add proper error messages!!!
         CommandSourceStack source = context.getSource();
         String targetPlayer = StringArgumentType.getString(context, "targetPlayer");
+
+        // Validate the target player exists in the loop
+        PlayerData targetData = TimeLoop.loopSceneManager.getRecordingPlayer(targetPlayer);
+        if (targetData == null) {
+            source.sendFailure(Component.literal("Player '" + targetPlayer + "' is not a recording player."));
+            return 0;
+        }
+
         String newName = StringArgumentType.getString(context, "newName").replace(" ", "").toLowerCase();
+        if (newName.isEmpty()) {
+            source.sendFailure(Component.literal("Player name cannot be empty."));
+            return 0;
+        }
 
         Skin finalSkin = new Skin();
         String rawSkinValue;
@@ -223,12 +239,11 @@ public class SettingsCommands {
 
             if (host.equals("mineskin.org") || host.equals("minesk.in")) {
                 finalSkin.value = testUrl.replaceFirst("^[a-zA-Z]+://", "");
-
                 finalSkin.skinType = SkinTypes.MINESKIN;
-
                 LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected MineSkin URL {}", finalSkin.value);
             } else {
                 String[] filetypes = {".jpg", ".jpeg", ".png"};
+                boolean foundFile = false;
 
                 for (String filetype : filetypes) {
                     String filename;
@@ -238,25 +253,113 @@ public class SettingsCommands {
                     } else {
                         filename = rawSkinValue;
                     }
-                    LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin input is not a URL, trying as file: {}", filename);
-                    LoopCommands.LOOP_COMMANDS_LOGGER.info("looking at file: {}", TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename));
                     File skinFile = new File(TimeLoop.worldFolder.resolve("mocap_files").resolve("skins").resolve(filename).toString());
 
                     if (skinFile.isFile()) {
                         LoopCommands.LOOP_COMMANDS_LOGGER.info("Detected skin at {}", skinFile.getPath());
                         finalSkin.value = rawSkinValue;
-
                         finalSkin.skinType = SkinTypes.FILE;
-                    } else {
-                        LoopCommands.LOOP_COMMANDS_LOGGER.info("Skin {} is not url or file.", filename);
+                        foundFile = true;
+                        break;
                     }
                 }
+
+                if (!foundFile) {
+                    source.sendFailure(Component.literal("Skin '" + rawSkinValue + "' is not a valid MineSkin URL or skin file."));
+                    return 0;
+                }
             }
-        } catch (URISyntaxException | NullPointerException ignored) {}
+        } catch (URISyntaxException | NullPointerException e) {
+            // Not a URL — treat as player name skin (default)
+            LoopCommands.LOOP_COMMANDS_LOGGER.debug("Skin input '{}' is not a URL, using as player name", rawSkinValue);
+        }
 
         TimeLoop.modifyPlayerAttributes(targetPlayer, newName, finalSkin);
-        source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer), true);
+        source.sendSuccess(() -> Component.literal("Modified player " + targetPlayer + " -> '" + newName + "'"), true);
         LoopCommands.LOOP_COMMANDS_LOGGER.info("Modified player {} with name {} and skin {}", targetPlayer, newName, finalSkin.value);
+        return 1;
+    }
+
+    /**
+     * Registers the {@code /loop settings voice} category and its subcommands.
+     * <p>
+     * The category requires Simple Voice Chat to be installed.
+     * Individual subcommands may have additional requirements (e.g.
+     * voiceInteraction requires voicechat-interaction).
+     */
+    private static void registerVoiceCommands(LiteralArgumentBuilder<CommandSourceStack> settingsNode) {
+        if (!TimeLoop.voiceChatLoaded) return;
+
+        LiteralArgumentBuilder<CommandSourceStack> voiceNode = Commands.literal("voice");
+
+        // trackVoice — enable/disable voice chat recording
+        voiceNode.then(Commands.literal("trackVoice")
+                .executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "Track voice is set to: " + TimeLoop.trackVoice), false);
+                    return 1;
+                })
+                .then(Commands.argument("value", BoolArgumentType.bool())
+                        .executes(SettingsCommands::trackVoice)));
+
+        // togglePlayerVoiceIcon — always available when SVC is loaded
+        voiceNode.then(Commands.literal("togglePlayerVoiceIcon")
+                .executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "Player voice icon is set to: " + TimeLoop.showPlayerVoiceIcon), false);
+                    return 1;
+                })
+                .then(Commands.argument("value", BoolArgumentType.bool())
+                        .executes(SettingsCommands::togglePlayerVoiceIcon)));
+
+        // voiceInteraction toggle — requires voicechat-interaction
+        if (TimeLoop.voiceInteractionLoaded) {
+            voiceNode.then(Commands.literal("voiceInteraction")
+                    .executes(context -> {
+                        context.getSource().sendSuccess(() -> Component.literal(
+                                "Voice interaction is set to: " + TimeLoop.voiceInteractionEnabled), false);
+                        return 1;
+                    })
+                    .then(Commands.argument("value", BoolArgumentType.bool())
+                            .executes(SettingsCommands::voiceInteraction)));
+        }
+
+        settingsNode.then(voiceNode);
+    }
+
+    private static int trackVoice(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.trackVoice = newValue;
+        TimeLoop.config.trackVoice = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Track voice is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Track voice set to {}", newValue);
+        return 1;
+    }
+
+    private static int togglePlayerVoiceIcon(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.showPlayerVoiceIcon = newValue;
+        TimeLoop.config.showPlayerVoiceIcon = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Player voice icon is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Player voice icon set to {}", newValue);
+        return 1;
+    }
+
+    private static int voiceInteraction(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        boolean newValue = BoolArgumentType.getBool(context, "value");
+        TimeLoop.voiceInteractionEnabled = newValue;
+        TimeLoop.config.voiceInteractionEnabled = newValue;
+        TimeLoop.config.save();
+
+        source.sendSuccess(() -> Component.literal("Voice interaction is set to: " + newValue), true);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info("Voice interaction set to {}", newValue);
         return 1;
     }
 
