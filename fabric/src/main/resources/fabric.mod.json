@@ -29,7 +29,7 @@
 		"java": ">=21"
 	},
     "suggests": {
-        "voicechat_api": ">=${voicechat_api_version}",
-        "vcinteraction": "*"
+        "voicechat_api": ">=${voicechat_version}",
+        "vcinteraction": ">=${voicechat_interaction_version}"
     }
 }
