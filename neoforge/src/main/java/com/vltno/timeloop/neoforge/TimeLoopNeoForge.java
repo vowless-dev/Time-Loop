@@ -3,6 +3,7 @@ package com.vltno.timeloop.neoforge;
 import com.vltno.timeloop.commands.LoopCommands;
 import com.vltno.timeloop.TimeLoop;
 import com.vltno.timeloop.neoforge.events.*;
+import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
@@ -19,6 +20,9 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.minecraft.network.Connection;
+import java.lang.reflect.Field;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,6 +133,26 @@ public class TimeLoopNeoForge {
     public void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
             PlayerNeoForgeEvent.dimensionChange(serverPlayer);
+        }
+    }
+
+    // Fix for AppleSkin/NeoForge crash when ticking FakePlayers
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            if (player.getClass().getName().contains("FakePlayer")) {
+                try {
+                    Connection conn = player.connection.getConnection();
+                    if (conn.channel() == null) {
+                        Field channelField = Connection.class.getDeclaredField("channel");
+                        channelField.setAccessible(true);
+                        channelField.set(conn, new EmbeddedChannel());
+                        LOOP_LOGGER.debug("Injected EmbeddedChannel into FakePlayer connection to prevent NeoForge crashes.");
+                    }
+                } catch (Exception e) {
+                    LOOP_LOGGER.error("Failed to inject dummy channel into FakePlayer", e);
+                }
+            }
         }
     }
 }
