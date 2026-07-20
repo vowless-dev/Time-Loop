@@ -31,11 +31,11 @@ dependencies {
 
     modImplementation "maven.modrinth:motion-capture:${mod_mocap_version}-fabric-${minecraft_version}"
 
-    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_version}"
 
     modRuntimeOnly "maven.modrinth:simple-voice-chat:fabric-${minecraft_version}-${voicechat_version}"
 
-    modRuntimeOnly "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}:fabric-stub"
+    modRuntimeOnly "de.maxhenkel.voicechat:voicechat-api:${voicechat_version}:fabric-stub"
     
     implementation project(path: ':common', configuration: 'namedElements')
 }

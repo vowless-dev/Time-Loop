@@ -22,7 +22,7 @@ dependencies {
         parchment("org.parchmentmc.data:parchment-${parchment_minecraft_version}:${parchment_version}@zip")
     }
 
-    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_version}"
 
     modCompileOnly "maven.modrinth:motion-capture:${mod_mocap_version}-fabric-${minecraft_version}"
 
