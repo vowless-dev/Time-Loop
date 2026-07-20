@@ -49,8 +49,9 @@ subprojects {
 
                         "minecraft_version"                     : minecraft_version,
 
-                        "voicechat_api_version"                 : voicechat_api_version,
-                        
+                        "voicechat_version"                     : voicechat_version,
+                        "voicechat_interaction_version"         : voicechat_interaction_version,
+
                         "fabric_loader_version"                 : fabric_loader_version,
                         "fabric_api_version"                    : fabric_api_version,
                         "neoforge_version"                      : neoforge_version,

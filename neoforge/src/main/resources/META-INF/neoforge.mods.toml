@@ -36,13 +36,13 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="voicechat_api"
 type="optional"
-versionRange="[${voicechat_api_version},)"
+versionRange="([${voicechat_version},))"
 ordering="AFTER"
 side="BOTH"
 
 [[dependencies.${mod_id}]]
 modId="vcinteraction"
 type="optional"
-versionRange="*"
+versionRange="([${voicechat_interaction_version},))"
 ordering="AFTER"
 side="BOTH"
