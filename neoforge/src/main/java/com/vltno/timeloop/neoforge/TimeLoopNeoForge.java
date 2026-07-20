@@ -136,7 +136,7 @@ public class TimeLoopNeoForge {
         }
     }
 
-    // Fix for AppleSkin/NeoForge crash when ticking FakePlayers
+    // FIXME - remove when mocap updates as it implements its own EmbeddedChannel
     @SubscribeEvent
     public void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
