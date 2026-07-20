@@ -39,3 +39,10 @@ type="optional"
 versionRange="[${voicechat_api_version},)"
 ordering="AFTER"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="vcinteraction"
+type="optional"
+versionRange="*"
+ordering="AFTER"
+side="BOTH"
