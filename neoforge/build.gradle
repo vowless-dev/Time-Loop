@@ -33,7 +33,7 @@ dependencies {
     api project(":common")
     implementation "maven.modrinth:motion-capture:${mod_mocap_version}-neoforge-${minecraft_version}"
 
-    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_api_version}"
+    implementation "de.maxhenkel.voicechat:voicechat-api:${voicechat_version}"
 
     runtimeOnly "maven.modrinth:simple-voice-chat:neoforge-${minecraft_version}-${voicechat_version}"
 }
