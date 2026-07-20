@@ -144,6 +144,7 @@ public class TogglesCommands {
 
         if (TimeLoop.mocapController != null) {
             TimeLoop.mocapController.setSetting("invulnerable_playback", String.valueOf(!newHurtLoopedPlayers));
+            TimeLoop.mocapController.setSetting("use_creative_game_mode", String.valueOf(!newHurtLoopedPlayers));
         }
 
         source.sendSuccess(() -> Component.literal("Hurt looped players is set to: " + newHurtLoopedPlayers), true);
