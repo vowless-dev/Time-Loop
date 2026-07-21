@@ -44,7 +44,7 @@ public class TickEvent {
                     TimeLoop.runLoopIteration();
                 }
             }
-            case TIME -> {
+            case DURATION -> {
                 TimeLoop.ticksLeft = TimeLoop.loopLengthTicks - TimeLoop.tickCounter;
 
                 TimeLoop.updateInfoBar(TimeLoop.loopLengthTicks, TimeLoop.ticksLeft);

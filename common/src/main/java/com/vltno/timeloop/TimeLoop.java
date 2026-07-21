@@ -256,7 +256,7 @@ public class TimeLoop {
 			return;
 		}
 		if (showLoopInfo) {
-			loopBossBar.visible(loopType.equals(LoopTypes.TIME) || loopType.equals(LoopTypes.TIME_OF_DAY));
+			loopBossBar.visible(loopType.equals(LoopTypes.DURATION) || loopType.equals(LoopTypes.TIME_OF_DAY));
 		}
 
 		loopSceneManager.forEachRecordingPlayer(playerData -> {
