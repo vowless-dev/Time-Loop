@@ -32,14 +32,14 @@ public class TimeLoopFabric implements ModInitializer {
         TimeLoop.voiceChatLoaded = loader.isModLoaded("voicechat");
         TimeLoop.voiceInteractionLoaded = loader.isModLoaded("vcinteraction");
 
-        LOOP_LOGGER.info("Mod detection — voicechat: {}, vcinteraction: {}",
+        LOOP_LOGGER.info("Mod detection - voicechat: {}, vcinteraction: {}",
                 TimeLoop.voiceChatLoaded, TimeLoop.voiceInteractionLoaded);
 
         // Register our own voice GameEvent (timeloop:voice) only when
         // voicechat-interaction is installed. We reuse voiceinteraction's
         // sculk frequency mapping for its event, but need our own event
         // for replay entities. When vcinteraction is NOT installed,
-        // we skip registration entirely — no sculk/warden interaction.
+        // we skip registration entirely - no sculk/warden interaction.
         if (TimeLoop.voiceInteractionLoaded) {
             Registry.registerForHolder(
                     BuiltInRegistries.GAME_EVENT,
