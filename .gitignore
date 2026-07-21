@@ -44,3 +44,4 @@ replay_*.log
 /git_diff_monitor.py
 /neoforge/run/
 .continue/
+.env
