@@ -37,7 +37,7 @@ public class TimeLoopConfig {
     public boolean displayTimeInTicks = false;
     public boolean trackItems = true;
     public int entityTrackingDistance = 32; // Distance in blocks for mocap entity tracking (items, vehicles)
-    public LoopTypes loopType = LoopTypes.TIME;
+    public LoopTypes loopType = LoopTypes.DURATION;
     public boolean trackChat = true;
     public boolean hurtLoopedPlayers = false;
     public RewindTypes rewindType = RewindTypes.NONE;
@@ -92,7 +92,7 @@ public class TimeLoopConfig {
 
         if (config.loopType == null) {
             TimeLoop.LOOP_LOGGER.warn("loopType was null (possibly an old config using TICKS) — resetting to TIME");
-            config.loopType = LoopTypes.TIME;
+            config.loopType = LoopTypes.DURATION;
         }
 
         // Initialize transient fields on every PlayerData that Gson deserialized.
