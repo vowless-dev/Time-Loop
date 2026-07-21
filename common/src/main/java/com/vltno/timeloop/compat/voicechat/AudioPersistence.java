@@ -16,7 +16,7 @@ import java.util.concurrent.*;
  * <pre>
  *   timeloop_audio/
  *     &lt;playerName&gt;/
- *       iter_&lt;N&gt;_seg_&lt;M&gt;.tlva    (TimeLoop Voice Audio — binary format)
+ *       iter_&lt;N&gt;_seg_&lt;M&gt;.tlva    (TimeLoop Voice Audio - binary format)
  * </pre>
  * <p>
  * File format (.tlva):
@@ -241,7 +241,7 @@ public final class AudioPersistence {
     }
 
     /**
-     * Deletes all saved voice audio for every player — the entire
+     * Deletes all saved voice audio for every player - the entire
      * {@code timeloop_audio/} directory tree. Also clears in-memory audio
      * for all recording players.
      *
@@ -314,7 +314,7 @@ public final class AudioPersistence {
             for (TimedAudioFrame frame : frames) {
                 out.writeInt(frame.tick());
 
-                // Position lookup — use the position recorded at this tick
+                // Position lookup - use the position recorded at this tick
                 Vec3 pos = player.getPosition(iter, seg, frame.tick());
                 if (pos != null) {
                     out.writeDouble(pos.x);

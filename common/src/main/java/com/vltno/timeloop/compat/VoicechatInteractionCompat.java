@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * from the registry (reusing its sculk frequency mapping) and emits it from
  * replay entities during voice playback.
  * <p>
- * When vcinteraction is <b>not</b> installed, this class is a complete no-op —
+ * When vcinteraction is <b>not</b> installed, this class is a complete no-op -
  * {@code voiceEvent} remains {@code null} and all emission methods return
  * immediately. No sculk/warden interaction occurs from voice without
  * vcinteraction.
@@ -57,7 +57,7 @@ public final class VoicechatInteractionCompat {
     public static void resolveGameEvent() {
         if (!TimeLoop.voiceInteractionLoaded) {
             voiceEvent = null;
-            TimeLoop.LOOP_LOGGER.info("[Compat] voicechat-interaction not installed — voice game events disabled");
+            TimeLoop.LOOP_LOGGER.info("[Compat] voicechat-interaction not installed - voice game events disabled");
             return;
         }
 
@@ -69,7 +69,7 @@ public final class VoicechatInteractionCompat {
             TimeLoop.LOOP_LOGGER.info("[Compat] Using vcinteraction:voice GameEvent for replay entities");
             return;
         }
-        TimeLoop.LOOP_LOGGER.warn("[Compat] vcinteraction loaded but its GameEvent not found — falling back to timeloop:voice");
+        TimeLoop.LOOP_LOGGER.warn("[Compat] vcinteraction loaded but its GameEvent not found - falling back to timeloop:voice");
 
         // Fall back to our own
         Identifier tlLoc = Identifier.fromNamespaceAndPath("timeloop", "voice");

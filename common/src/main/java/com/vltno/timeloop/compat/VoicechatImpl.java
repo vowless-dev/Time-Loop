@@ -84,7 +84,7 @@ public final class VoicechatImpl {
      * <p>
      * The caller must have already called {@code sceneFile.startPlayback()} so that
      * the mocap FakePlayer entities are spawned. The {@code entities} list contains
-     * those entities <b>in scene order</b> (sorted by entity ID) — one per
+     * those entities <b>in scene order</b> (sorted by entity ID) - one per
      * recording/scene-element. When a player changes dimension mid-iteration,
      * mocap's split-recording creates multiple scene elements (and thus multiple
      * entities) for that single iteration.
@@ -116,7 +116,7 @@ public final class VoicechatImpl {
 
         int currentIteration = TimeLoop.loopIteration;
 
-        // Capture the tick counter NOW — this is the reference point for
+        // Capture the tick counter NOW - this is the reference point for
         // tick-gated scheduling. The PCM buffer is tick-indexed from 0 (the
         // start of the loop iteration).
         final int iterationStartTick = TimeLoop.tickCounter;
@@ -265,11 +265,11 @@ public final class VoicechatImpl {
                 int tickStart = frame.tick() * SAMPLES_PER_TICK;
 
                 if (writeHead < 0 || frame.tick() > prevTick + 1) {
-                    // First frame ever, or a silence gap (skipped tick) —
+                    // First frame ever, or a silence gap (skipped tick) -
                     // jump the write head to this tick's start position.
                     writeHead = tickStart;
                 }
-                // else: same tick or next consecutive tick —
+                // else: same tick or next consecutive tick -
                 //        keep writeHead where it is (contiguous placement).
 
                 prevTick = frame.tick();
@@ -453,7 +453,7 @@ public final class VoicechatImpl {
 
     /**
      * Creates a simple AudioPlayer that feeds PCM frames sequentially until
-     * exhausted. No tick-gating — the region is started at the right tick by
+     * exhausted. No tick-gating - the region is started at the right tick by
      * {@link #onTick()}, and the AudioPlayer runs at its native rate.
      *
      * @param channel     the SVC audio channel
@@ -516,10 +516,10 @@ public final class VoicechatImpl {
             if (elapsed >= region.regionStartTick) {
                 scheduledRegions.remove(region);
                 if (region.entity != null && TimeLoop.showPlayerVoiceIcon) {
-                    // Entity channel — audio follows entity, speaker icon visible
+                    // Entity channel - audio follows entity, speaker icon visible
                     startRegionEntityChannel(region.key, region.pcm, region.entity);
                 } else {
-                    // Locational channel — no speaker icon; positioned at entity
+                    // Locational channel - no speaker icon; positioned at entity
                     // (or fallback position if entity is null)
                     startRegionLocationalChannel(region.key, region.pcm,
                             region.data, region.iter, region.seg,
@@ -558,7 +558,7 @@ public final class VoicechatImpl {
             realPlayerUUIDs.add(sp.getUUID());
         }
 
-        // Scan ALL dimensions — mocap spawns FakePlayer entities in the dimension
+        // Scan ALL dimensions - mocap spawns FakePlayer entities in the dimension
         // the recording was made in (assigned via dimensionId in RecordingData).
         for (ServerLevel level : TimeLoop.server.getAllLevels()) {
             for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {

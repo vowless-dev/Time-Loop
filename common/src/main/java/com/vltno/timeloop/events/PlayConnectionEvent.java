@@ -37,7 +37,7 @@ public class PlayConnectionEvent {
             existingData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
         }
 
-        // Only snapshot inventory when the loop is NOT running — during a loop,
+        // Only snapshot inventory when the loop is NOT running - during a loop,
         // the saved inventory represents the start-of-loop state and must not be
         // overwritten by a reconnecting player's current (potentially changed) inventory.
         if (!TimeLoop.isLooping) {
@@ -104,7 +104,7 @@ public class PlayConnectionEvent {
                 // If playback hasn't been started yet this iteration (e.g. server restart
                 // mid-loop, or singleplayer rejoin), start mocap + voice for ALL players now.
                 if (!TimeLoop.playbackStartedThisIteration && TimeLoop.loopIteration > 0) {
-                    TimeLoop.LOOP_LOGGER.info("First player join mid-loop — starting playback for all players");
+                    TimeLoop.LOOP_LOGGER.info("First player join mid-loop - starting playback for all players");
                     TimeLoop.startPlaybackForAllPlayers();
                 }
 
@@ -123,7 +123,7 @@ public class PlayConnectionEvent {
         PlayerData playerData = TimeLoop.loopSceneManager.getRecordingPlayer(playerName);
 
         if (TimeLoop.isLooping && playerData != null && playerData.getActive()) {
-            // Save ONLY this player's voice audio and mocap recording — not everyone's.
+            // Save ONLY this player's voice audio and mocap recording - not everyone's.
             // Must happen BEFORE marking inactive so the save includes this player.
             VoicechatCompat.savePlayerAudio(playerData);
             TimeLoop.saveRecordingForPlayer(playerData);
