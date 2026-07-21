@@ -38,16 +38,11 @@ public class SettingsCommands {
             String commandName = loopType.getCommandName();
 
             switch (loopType) {
-                case TICKS -> {
+                case TIME -> {
                     loopTypeNode.then(Commands.literal(commandName)
-                        .then(Commands.argument(commandName, IntegerArgumentType.integer(20))
-                                .executes(context -> loopType(context, loopType, commandName, (newTicks) -> {
-                                    TimeLoop.loopLengthTicks = newTicks;
-                                    TimeLoop.config.loopLengthTicks = newTicks;
-
-                                    TimeLoop.ticksLeft = newTicks;
-                                    TimeLoop.config.ticksLeft = newTicks;
-                                }))));
+                        .then(Commands.argument(commandName, StringArgumentType.word())
+                                .suggests(CommandUtils::TimeSuggestion)
+                                .executes(context -> loopTypeDuration(context, loopType, commandName))));
                 }
 
                 case TIME_OF_DAY -> {
@@ -145,7 +140,7 @@ public class SettingsCommands {
     private static String getLoopTypeText() {
         String text = "Loop type is set to " + TimeLoop.config.loopType.getSerializedName();
         switch (TimeLoop.config.loopType) {
-            case TICKS -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
+            case TIME -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
 
             case TIME_OF_DAY -> text += " [" + TimeLoop.config.timeSetting + " time]";
 
@@ -155,6 +150,36 @@ public class SettingsCommands {
         }
 
         return text;
+    }
+
+    private static int loopTypeDuration(CommandContext<CommandSourceStack> context, LoopTypes loopType, String argumentName) {
+        String durationStr = StringArgumentType.getString(context, argumentName);
+        int newTicks;
+        try {
+            newTicks = CommandUtils.parseDurationToTicks(durationStr);
+            if (newTicks < 20) {
+                context.getSource().sendFailure(Component.literal("Duration must be at least 1 second (20 ticks)."));
+                return 0;
+            }
+        } catch (IllegalArgumentException e) {
+            context.getSource().sendFailure(Component.literal("Invalid duration format: " + durationStr));
+            return 0;
+        }
+
+        TimeLoop.loopType = loopType;
+        TimeLoop.config.loopType = loopType;
+
+        TimeLoop.loopLengthTicks = newTicks;
+        TimeLoop.config.loopLengthTicks = newTicks;
+
+        TimeLoop.ticksLeft = newTicks;
+        TimeLoop.config.ticksLeft = newTicks;
+
+        TimeLoop.config.save();
+
+        context.getSource().sendSuccess(() -> Component.literal(getLoopTypeText()), false);
+        LoopCommands.LOOP_COMMANDS_LOGGER.info(getLoopTypeText());
+        return 1;
     }
 
     private static int loopType(CommandContext<CommandSourceStack> context, LoopTypes loopType, @Nullable String argumentName, @Nullable Consumer<Integer> setter) {

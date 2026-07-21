@@ -100,6 +100,47 @@ public class CommandUtils {
         return FileSuggestion(builder, TimeLoop.worldFolder.resolve("mocap_files").resolve("skins"), false);
     }
 
+    public static CompletableFuture<Suggestions> TimeSuggestion(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String input = builder.getRemaining().toLowerCase();
+
+        java.util.regex.Matcher matcher = Pattern.compile("^([0-9]*\\.?[0-9]+)([a-zA-Z]*)$").matcher(input);
+        if (matcher.matches()) {
+            String num = matcher.group(1);
+            String currentSuffix = matcher.group(2);
+            List<String> suffixes = Arrays.asList("s", "m", "h", "d", "t", "sec", "min", "hr", "day", "tick", "seconds", "minutes", "hours", "days", "ticks");
+            for (String suffix : suffixes) {
+                if (suffix.startsWith(currentSuffix)) {
+                    builder.suggest(num + suffix);
+                }
+            }
+        }
+        return builder.buildFuture();
+    }
+
+    public static int parseDurationToTicks(String durationStr) throws IllegalArgumentException {
+        if (durationStr == null || durationStr.isBlank()) {
+            throw new IllegalArgumentException("Duration cannot be empty");
+        }
+
+        java.util.regex.Matcher matcher = Pattern.compile("^([0-9]*\\.?[0-9]+)([a-zA-Z]*)$").matcher(durationStr);
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Invalid duration format: " + durationStr);
+        }
+
+        float value = Float.parseFloat(matcher.group(1));
+        String suffix = matcher.group(2).toLowerCase();
+
+        return switch (suffix) {
+            case "d", "day", "days" -> Math.round(value * 1728000);
+            case "h", "hr", "hrs", "hour", "hours" -> Math.round(value * 72000);
+            case "m", "min", "mins", "minute", "minutes" -> Math.round(value * 1200);
+            case "s", "sec", "secs", "second", "seconds" -> Math.round(value * 20);
+            case "t", "tick", "ticks", "" -> Math.round(value);
+            default -> throw new IllegalArgumentException("Unknown time unit: " + suffix);
+        };
+    }
+
+
     @SuppressWarnings("unchecked")
     public static LiteralArgumentBuilder<CommandSourceStack> toggleCommand(Supplier<Boolean> getter, String name, Command command) {
         String spacedName = Pattern.compile("(?<=[a-z])(?=[A-Z])").matcher(name).replaceAll(" ").toLowerCase();
