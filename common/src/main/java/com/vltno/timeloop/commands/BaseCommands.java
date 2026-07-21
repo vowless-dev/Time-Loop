@@ -18,23 +18,19 @@ public class BaseCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
 
         parentBuilder.then(Commands.literal("start")
-                .executes(BaseCommands::start)
-                .requires(source -> source.hasPermission(2)));
+                .executes(BaseCommands::start));
         
         parentBuilder.then(Commands.literal("skip")
-                .executes(BaseCommands::skip)
-                .requires(source -> source.hasPermission(2)));
+                .executes(BaseCommands::skip));
         
         parentBuilder.then(Commands.literal("stop")
-                .executes(BaseCommands::stop)
-                .requires(source -> source.hasPermission(2)));
+                .executes(BaseCommands::stop));
 
         parentBuilder.then(Commands.literal("reset")
-                .executes(BaseCommands::reset)
-                .requires(source -> source.hasPermission(2)));
+                .executes(BaseCommands::reset));
 
         parentBuilder.then(Commands.literal("status")
-                .executes(BaseCommands::status)); // No permission needed
+                .executes(BaseCommands::status));
     }
 
     private static int start(CommandContext<CommandSourceStack> context) {
