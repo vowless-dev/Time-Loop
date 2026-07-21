@@ -24,8 +24,7 @@ import java.util.function.Consumer;
 
 public class SettingsCommands {
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parentBuilder) {
-        LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings")
-                .requires(source -> source.hasPermission(2));
+        LiteralArgumentBuilder<CommandSourceStack> settingsNode = Commands.literal("settings");
 
         //region loopType
 
