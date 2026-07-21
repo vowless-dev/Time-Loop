@@ -108,7 +108,7 @@ public class TogglesCommands {
 
         if (TimeLoop.loopBossBar != null) {
             if (newShowLoopInfo) {
-                TimeLoop.loopBossBar.visible(TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY)));
+                TimeLoop.loopBossBar.visible(TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TIME) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY)));
             } else {
                 TimeLoop.loopBossBar.visible(false);
             }
