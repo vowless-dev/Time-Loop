@@ -40,8 +40,8 @@ replay_*.log
 *.jfr
 
 # misc
-/code_changes.json
-/git_diff_monitor.py
 /neoforge/run/
 .continue/
+
+/.env
 .env
