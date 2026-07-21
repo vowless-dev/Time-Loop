@@ -32,6 +32,9 @@ Simply use commands to configure the loop.
         - `displayTimeInTicks [false]` - Displays the ticks instead of HH:MM:SS on the info bar.
         - `trackChat [true]` - Toggles tracking chat during loops.
         - `hurtLoopedPlayers [false]` - Toggles being able to hit looped players.
+    - **voice** (Requires simple voice chat to be installed)
+        - `trackVoice [true]` - Toggles tracking simple voice chat during loops.
+        - `showPlayerVoiceIcon [true]` - Toggles whether or not to show the speaking icon for looped players.
 
 ## Loop Types
 - `manual` ➔ Only loops when you use the `skip` command
