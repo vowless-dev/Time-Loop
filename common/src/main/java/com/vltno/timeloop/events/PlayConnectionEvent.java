@@ -109,7 +109,7 @@ public class PlayConnectionEvent {
                 }
 
                 if (TimeLoop.showLoopInfo && TimeLoop.loopBossBar != null) {
-                    boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TICKS) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
+                    boolean shouldBeVisible = TimeLoop.loopType != null && (TimeLoop.loopType.equals(LoopTypes.TIME) || TimeLoop.loopType.equals(LoopTypes.TIME_OF_DAY));
                     TimeLoop.loopBossBar.visible(shouldBeVisible);
                 }
             });
