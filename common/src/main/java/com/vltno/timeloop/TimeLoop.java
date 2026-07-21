@@ -51,6 +51,8 @@ public class TimeLoop {
 	public static MinecraftServer server;
 	public static ServerLevel serverLevel;
 
+	// TODO!!! - MAKE COMPAT FOR ALL MINECRAFT VERSIONS SO IT CAN BE THE SAME BRANCH
+
 	// Mocap API controller - created on server start
 	public static MocapController mocapController;
 
