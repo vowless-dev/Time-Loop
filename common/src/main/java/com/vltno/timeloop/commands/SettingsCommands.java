@@ -294,7 +294,7 @@ public class SettingsCommands {
                 }
             }
         } catch (URISyntaxException | NullPointerException e) {
-            // Not a URL — treat as player name skin (default)
+            // Not a URL - treat as player name skin (default)
             LoopCommands.LOOP_COMMANDS_LOGGER.debug("Skin input '{}' is not a URL, using as player name", rawSkinValue);
         }
 
@@ -316,7 +316,7 @@ public class SettingsCommands {
 
         LiteralArgumentBuilder<CommandSourceStack> voiceNode = Commands.literal("voice");
 
-        // trackVoice — enable/disable voice chat recording
+        // trackVoice - enable/disable voice chat recording
         voiceNode.then(Commands.literal("trackVoice")
                 .executes(context -> {
                     context.getSource().sendSuccess(() -> Component.literal(
@@ -326,7 +326,7 @@ public class SettingsCommands {
                 .then(Commands.argument("value", BoolArgumentType.bool())
                         .executes(SettingsCommands::trackVoice)));
 
-        // togglePlayerVoiceIcon — always available when SVC is loaded
+        // togglePlayerVoiceIcon - always available when SVC is loaded
         voiceNode.then(Commands.literal("togglePlayerVoiceIcon")
                 .executes(context -> {
                     context.getSource().sendSuccess(() -> Component.literal(
@@ -336,7 +336,7 @@ public class SettingsCommands {
                 .then(Commands.argument("value", BoolArgumentType.bool())
                         .executes(SettingsCommands::togglePlayerVoiceIcon)));
 
-        // voiceInteraction toggle — requires voicechat-interaction
+        // voiceInteraction toggle - requires voicechat-interaction
         if (TimeLoop.voiceInteractionLoaded) {
             voiceNode.then(Commands.literal("voiceInteraction")
                     .executes(context -> {

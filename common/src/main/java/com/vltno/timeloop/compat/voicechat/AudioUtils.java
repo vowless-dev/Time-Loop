@@ -28,7 +28,7 @@ public final class AudioUtils {
             rms += normalized * normalized;
         }
 
-        // vcinteraction uses samples.length / 2 — this accounts for the
+        // vcinteraction uses samples.length / 2 - this accounts for the
         // interleaved stereo layout of Opus-decoded PCM.
         int sampleCount = samples.length / 2;
         rms = (sampleCount == 0) ? 0.0 : Math.sqrt(rms / sampleCount);

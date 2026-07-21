@@ -52,7 +52,7 @@ public class TimeLoopVoicechatPlugin {
 
         // Game event emission for live players (sculk/warden) is handled
         // entirely by voicechat-interaction when it is installed. When VCI
-        // is NOT installed, voice game events are disabled — no sculk interaction.
+        // is NOT installed, voice game events are disabled - no sculk interaction.
     }
 
 }
