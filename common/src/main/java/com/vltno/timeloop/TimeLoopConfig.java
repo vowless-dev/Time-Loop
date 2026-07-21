@@ -91,7 +91,7 @@ public class TimeLoopConfig {
         }
 
         if (config.loopType == null) {
-            TimeLoop.LOOP_LOGGER.warn("loopType was null (possibly an old config using TICKS) — resetting to TIME");
+            TimeLoop.LOOP_LOGGER.warn("loopType was null (possibly an old config using TICKS) - resetting to TIME");
             config.loopType = LoopTypes.DURATION;
         }
 
@@ -102,26 +102,26 @@ public class TimeLoopConfig {
 
         // Validate numeric fields that a user may have hand-edited
         if (config.loopLengthTicks <= 0) {
-            TimeLoop.LOOP_LOGGER.warn("loopLengthTicks was {} — resetting to default 6000", config.loopLengthTicks);
+            TimeLoop.LOOP_LOGGER.warn("loopLengthTicks was {} - resetting to default 6000", config.loopLengthTicks);
             config.loopLengthTicks = 6000;
         }
         if (config.maxLoops < 0) {
             config.maxLoops = 0;
         }
         if (config.entityTrackingDistance < 1) {
-            TimeLoop.LOOP_LOGGER.warn("entityTrackingDistance was {} — resetting to default 32", config.entityTrackingDistance);
+            TimeLoop.LOOP_LOGGER.warn("entityTrackingDistance was {} - resetting to default 32", config.entityTrackingDistance);
             config.entityTrackingDistance = 32;
         }
         if (config.voiceInteractionThresholdDb < -127 || config.voiceInteractionThresholdDb > 0) {
-            TimeLoop.LOOP_LOGGER.warn("voiceInteractionThresholdDb was {} — resetting to default -50", config.voiceInteractionThresholdDb);
+            TimeLoop.LOOP_LOGGER.warn("voiceInteractionThresholdDb was {} - resetting to default -50", config.voiceInteractionThresholdDb);
             config.voiceInteractionThresholdDb = -50;
         }
         if (config.voiceInteractionCooldownTicks < 1) {
-            TimeLoop.LOOP_LOGGER.warn("voiceInteractionCooldownTicks was {} — resetting to default 20", config.voiceInteractionCooldownTicks);
+            TimeLoop.LOOP_LOGGER.warn("voiceInteractionCooldownTicks was {} - resetting to default 20", config.voiceInteractionCooldownTicks);
             config.voiceInteractionCooldownTicks = 20;
         }
         if (config.voiceAudioDistance < 1.0f) {
-            TimeLoop.LOOP_LOGGER.warn("voiceAudioDistance was {} — resetting to default 48", config.voiceAudioDistance);
+            TimeLoop.LOOP_LOGGER.warn("voiceAudioDistance was {} - resetting to default 48", config.voiceAudioDistance);
             config.voiceAudioDistance = 48.0f;
         }
 
