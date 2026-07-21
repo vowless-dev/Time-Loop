@@ -197,7 +197,7 @@ public class PlayerData {
         return activeSegment;
     }
 
-    /* ───────────────── RECORDING (transient — saved via AudioPersistence) ───────────────── */
+    /* ───────────────── RECORDING (transient - saved via AudioPersistence) ───────────────── */
 
     // iter → seg → list of timed opus frames
     private transient Map<Integer, Map<Integer, List<TimedAudioFrame>>> audio = new ConcurrentHashMap<>();

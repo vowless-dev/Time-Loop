@@ -54,7 +54,7 @@ public class TickEvent {
                     TimeLoop.runLoopIteration();
                 }
             }
-            // SLEEP, DEATH, MANUAL — iteration triggered externally, nothing to do here
+            // SLEEP, DEATH, MANUAL - iteration triggered externally, nothing to do here
             default -> {}
         }
     }

@@ -40,12 +40,12 @@ public class TimeLoopNeoForge {
         TimeLoop.voiceChatLoaded = modList.isLoaded("voicechat");
         TimeLoop.voiceInteractionLoaded = modList.isLoaded("vcinteraction");
 
-        LOOP_LOGGER.info("Mod detection \u2014 voicechat: {}, vcinteraction: {}",
+        LOOP_LOGGER.info("Mod detection - voicechat: {}, vcinteraction: {}",
                 TimeLoop.voiceChatLoaded, TimeLoop.voiceInteractionLoaded);
 
         // Register our own voice GameEvent (timeloop:voice) only when
         // voicechat-interaction is installed. When vcinteraction is NOT
-        // installed, we skip registration — no sculk/warden interaction.
+        // installed, we skip registration - no sculk/warden interaction.
         if (TimeLoop.voiceInteractionLoaded) {
             DeferredRegister<GameEvent> gameEvents =
                     DeferredRegister.create(Registries.GAME_EVENT, "timeloop");
