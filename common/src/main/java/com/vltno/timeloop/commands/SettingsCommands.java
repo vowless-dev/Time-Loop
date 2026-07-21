@@ -38,7 +38,7 @@ public class SettingsCommands {
             String commandName = loopType.getCommandName();
 
             switch (loopType) {
-                case TIME -> {
+                case DURATION -> {
                     loopTypeNode.then(Commands.literal(commandName)
                         .then(Commands.argument(commandName, StringArgumentType.word())
                                 .suggests(CommandUtils::TimeSuggestion)
@@ -140,7 +140,7 @@ public class SettingsCommands {
     private static String getLoopTypeText() {
         String text = "Loop type is set to " + TimeLoop.config.loopType.getSerializedName();
         switch (TimeLoop.config.loopType) {
-            case TIME -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
+            case DURATION -> text += " [" + TimeLoop.config.loopLengthTicks + " ticks]";
 
             case TIME_OF_DAY -> text += " [" + TimeLoop.config.timeSetting + " time]";
 
