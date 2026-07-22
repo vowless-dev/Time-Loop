@@ -22,7 +22,7 @@ Simply use commands to configure the loop.
 - `status` - Shows the status of the loop in chat.
 - **settings**
     - `maxLoops [disabled]` - Sets the maximum amount of loops.
-    - `loopType [ticks] [6000]` - Sets the type of loop.
+    - `loopType [duration] [5mins]` - Sets the type of loop.
     - `modifyPlayer [target_player] [nickname] [skin_from_file|skin_from_name|skin_from_mineskin] [skin]` - Changes a looped player's nickname and skin.
     - `setRewindType [none]` - Sets the rewind type.
     - **toggles**
@@ -39,7 +39,7 @@ Simply use commands to configure the loop.
 
 ## Loop Types
 - `manual` ➔ Only loops when you use the `skip` command
-- `ticks x` ➔ Loops every *x* ticks. Defaults to 6000 ticks (5 minutes)
+- `duration x` ➔ Loops every *x*. Defaults to 5 minutes (6000 ticks)
 - `time_of_day x` ➔ Loops when the time reaches the set time of day, *x*. Defaults to 13000
 - `sleep` ➔ Loops when a player sleeps
 - `death` ➔ Loops when a player dies
