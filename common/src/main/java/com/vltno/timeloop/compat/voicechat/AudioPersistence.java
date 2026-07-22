@@ -67,7 +67,7 @@ public final class AudioPersistence {
 
     private AudioPersistence() {} // utility class
 
-    /* ───────────── PUBLIC API ───────────── */
+    /* ------------- PUBLIC API ------------- */
 
     /**
      * Saves all voice data for a player to disk (asynchronously).
@@ -293,7 +293,7 @@ public final class AudioPersistence {
         }
     }
 
-    /* ───────────── BINARY I/O ───────────── */
+    /* ------------- BINARY I/O ------------- */
 
     private static void saveSegment(Path file,
                                     List<TimedAudioFrame> frames,
@@ -381,7 +381,7 @@ public final class AudioPersistence {
         }
     }
 
-    /* ───────────── PATH HELPERS ───────────── */
+    /* ------------- PATH HELPERS ------------- */
 
     private static Path getBaseDir() {
         return TimeLoop.worldFolder.resolve("timeloop_audio");
@@ -416,7 +416,7 @@ public final class AudioPersistence {
         }
     }
 
-    /* ───────────── INTERNAL RECORD ───────────── */
+    /* ------------- INTERNAL RECORD ------------- */
 
     private record FrameWithPosition(int tick, byte[] opus, Vec3 position) {}
 }

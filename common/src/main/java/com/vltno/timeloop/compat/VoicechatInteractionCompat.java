@@ -42,7 +42,7 @@ public final class VoicechatInteractionCompat {
     /** Per-entity cooldown tracking (UUID -> last game-time the event was emitted). */
     private static final Map<UUID, Long> cooldowns = new ConcurrentHashMap<>();
 
-    // ─── game event resolution ─────────────────────────────────────────
+    // --- game event resolution -----------------------------------------
 
     /**
      * Resolves the {@link GameEvent} to use for replay-entity voice emission.
@@ -83,7 +83,7 @@ public final class VoicechatInteractionCompat {
         }
     }
 
-    // ─── game event emission ───────────────────────────────────────────
+    // --- game event emission -------------------------------------------
 
     /**
      * Emits the voice game event from the given entity if the per-entity

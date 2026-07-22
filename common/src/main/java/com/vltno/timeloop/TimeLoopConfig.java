@@ -16,7 +16,7 @@ import java.util.Map;
 
 public class TimeLoopConfig {
 
-    /* ───────────── Loop state ───────────── */
+    /* ------------- Loop state ------------- */
 
     public String scenePrefix = "loop_scene";
     public boolean firstStart = true;
@@ -31,7 +31,7 @@ public class TimeLoopConfig {
     public int tickCounter = 0;
     public int ticksLeft = loopLengthTicks;
 
-    /* ───────────── Settings ───────────── */
+    /* ------------- Settings ------------- */
 
     public boolean showLoopInfo = true;
     public boolean displayTimeInTicks = false;
@@ -43,7 +43,7 @@ public class TimeLoopConfig {
     public RewindTypes rewindType = RewindTypes.NONE;
     public boolean trackInventory = false;
 
-    /* ───────────── Voice interaction (sculk / warden) ───────────── */
+    /* ------------- Voice interaction (sculk / warden) ------------- */
 
     public boolean voiceInteractionEnabled = true;
     public int voiceInteractionThresholdDb = -50; // dB; range -127 to 0
@@ -52,11 +52,11 @@ public class TimeLoopConfig {
     public boolean showPlayerVoiceIcon = true; // Show SVC speaker icon above looped player entities
     public boolean trackVoice = true; // Record voice chat audio during the loop
 
-    /* ───────────── Player data ───────────── */
+    /* ------------- Player data ------------- */
 
     public Map<String, PlayerData> recordingPlayers = new HashMap<>();
 
-    /* ───────────── Serialization (not persisted) ───────────── */
+    /* ------------- Serialization (not persisted) ------------- */
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static Path configPath;
