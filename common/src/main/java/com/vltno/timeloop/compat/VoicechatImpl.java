@@ -251,8 +251,16 @@ public final class VoicechatImpl {
                                   PlayerData data,
                                   int iter,
                                   int seg) {
-        // Buffer sized to the full loop duration + 1 tick of padding
-        int bufferSamples = (TimeLoop.loopLengthTicks + 1) * SAMPLES_PER_TICK;
+        // Find the maximum tick in the frames to properly size the buffer
+        int maxTick = TimeLoop.loopLengthTicks;
+        for (TimedAudioFrame frame : frames) {
+            if (frame.tick() > maxTick) {
+                maxTick = frame.tick();
+            }
+        }
+
+        // Buffer sized to the max duration + 1 tick of padding
+        int bufferSamples = (maxTick + 1) * SAMPLES_PER_TICK;
         short[] pcm = new short[bufferSamples];
 
         OpusDecoder decoder = serverApi.createDecoder();
