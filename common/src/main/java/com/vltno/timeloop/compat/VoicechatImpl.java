@@ -67,7 +67,7 @@ public final class VoicechatImpl {
         return pool;
     }
 
-    /* ───────────── INIT ───────────── */
+    /* ------------- INIT ------------- */
 
     public static void initCategory() {
         LOOP_CATEGORY = serverApi.volumeCategoryBuilder()
@@ -77,7 +77,7 @@ public final class VoicechatImpl {
         serverApi.registerVolumeCategory(LOOP_CATEGORY);
     }
 
-    /* ───────────── PLAYBACK ───────────── */
+    /* ------------- PLAYBACK ------------- */
 
     /**
      * Starts voice playback for all previous iterations of the given player.
@@ -233,7 +233,7 @@ public final class VoicechatImpl {
         return -1;
     }
 
-    /* ───────────── DECODING ───────────── */
+    /* ------------- DECODING ------------- */
 
     /**
      * Decodes a list of timed Opus frames into a full-duration PCM buffer.
@@ -302,7 +302,7 @@ public final class VoicechatImpl {
         }
     }
 
-    /* ───────────── VOICE DISTANCE ──────────── */
+    /* ------------- VOICE DISTANCE ------------ */
 
     /**
      * Returns the voice distance to use for audio channels.
@@ -322,7 +322,7 @@ public final class VoicechatImpl {
         }
     }
 
-    /* ───────────── CONSTANTS ───────────── */
+    /* ------------- CONSTANTS ------------- */
 
     // 48 kHz · 50 ms/tick = 2400 samples per tick
     private static final int SAMPLES_PER_TICK = 2400;
@@ -331,7 +331,7 @@ public final class VoicechatImpl {
     // Minimum consecutive silent frames to split speech regions
     private static final int SILENCE_GAP_FRAMES = 5; // ~100ms
 
-    /* ───────────── SPEECH REGION EXTRACTION ───────────── */
+    /* ------------- SPEECH REGION EXTRACTION ------------- */
 
     /** A contiguous block of non-silent PCM audio and its position in the full buffer. */
     private record SpeechRegion(int startSample, short[] pcm) {}
@@ -377,7 +377,7 @@ public final class VoicechatImpl {
         return regions;
     }
 
-    /* ───────────── CHANNEL START ───────────── */
+    /* ------------- CHANNEL START ------------- */
 
     /**
      * Starts an {@link EntityAudioChannel} for a single speech region.
@@ -486,7 +486,7 @@ public final class VoicechatImpl {
         );
     }
 
-    /* ───────────── TICK UPDATE ───────────── */
+    /* ------------- TICK UPDATE ------------- */
 
     /**
      * Processes scheduled speech regions. Call once per server tick while looping.
@@ -529,7 +529,7 @@ public final class VoicechatImpl {
         }
     }
 
-    /* ───────────── ENTITY LOOKUP ───────────── */
+    /* ------------- ENTITY LOOKUP ------------- */
 
     /**
      * Scans <b>all loaded server levels</b> for mocap FakePlayer entities matching
@@ -578,7 +578,7 @@ public final class VoicechatImpl {
         return result;
     }
 
-    /* ───────────── PERSISTENCE ───────────── */
+    /* ------------- PERSISTENCE ------------- */
 
     /** Saves all voice data to disk. No-op when SVC is not loaded. */
     public static CompletableFuture<Void> saveAudio() {
@@ -629,7 +629,7 @@ public final class VoicechatImpl {
         TimeLoop.LOOP_LOGGER.info("[Voice] VoicechatImpl shut down.");
     }
 
-    /* ───────────── STOP ───────────── */
+    /* ------------- STOP ------------- */
 
     /**
      * Stops voice playback for the given player, or all playback if
@@ -650,7 +650,7 @@ public final class VoicechatImpl {
         scheduledRegions.removeIf(r -> r.data.getName().equals(player));
     }
 
-    /* ───────────── KEY / HELPER TYPES ───────────── */
+    /* ------------- KEY / HELPER TYPES ------------- */
 
     private static String key(String p, int i, int s) {
         return p + "|" + i + "|" + s;

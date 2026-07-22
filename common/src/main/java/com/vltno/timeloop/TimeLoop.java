@@ -348,7 +348,7 @@ public class TimeLoop {
 		ArrayList<Float> offsets = playerData.getTempOffsets();
 		int recordingIndex = 0;
 
-		// ── 1. Save the primary recording FIRST ──────────────────────────────
+		// -- 1. Save the primary recording FIRST ------------------------------
 		MocapActiveRecording primaryRec = activeRecordings.remove(playerName);
 		if (primaryRec != null && primaryRec.isValid()) {
 			RecordingContext primaryCtx = ((ActiveRecording) primaryRec).ctx;
@@ -374,7 +374,7 @@ public class TimeLoop {
 			LOOP_LOGGER.warn("No primary mocap recording found for player: {}", playerName);
 		}
 
-		// ── 2. Find and save split recording contexts ──────────────────────
+		// -- 2. Find and save split recording contexts ----------------------
 		List<RecordingContext> splitContexts = new ArrayList<>();
 		for (RecordingContext ctx : new ArrayList<>(RecordingManager.allContexts())) {
 			if (!ctx.source.name.equals("+timeloop")) continue;

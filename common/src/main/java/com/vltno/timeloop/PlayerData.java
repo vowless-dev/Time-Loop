@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PlayerData {
-    // ── Persisted fields (serialized to config JSON via Gson) ──
+    // -- Persisted fields (serialized to config JSON via Gson) --
     private final String name;
     private String nickname;
     private Skin skin;
@@ -29,7 +29,7 @@ public class PlayerData {
     private boolean hasStartPosition;
     private double joinPosX, joinPosY, joinPosZ;
 
-    // ── Runtime-only fields (excluded from Gson serialization) ─-
+    // -- Runtime-only fields (excluded from Gson serialization) --
     private transient ResourceKey<Level> lastDimensionKey;
     private transient ResourceKey<Level> startDimensionKey;
     private transient int activeRecordingIndex;
@@ -183,7 +183,7 @@ public class PlayerData {
     }
 
 
-    /* ───────────────── SEGMENTS ───────────────── */
+    /* ----------------- SEGMENTS ----------------- */
 
     public void resetSegments() {
         activeSegment = 0;
@@ -197,7 +197,7 @@ public class PlayerData {
         return activeSegment;
     }
 
-    /* ───────────────── RECORDING (transient - saved via AudioPersistence) ───────────────── */
+    /* ----------------- RECORDING (transient - saved via AudioPersistence) ----------------- */
 
     // iter → seg → list of timed opus frames
     private transient Map<Integer, Map<Integer, List<TimedAudioFrame>>> audio = new ConcurrentHashMap<>();
