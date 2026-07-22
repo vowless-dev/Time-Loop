@@ -1,6 +1,6 @@
 # Time Loop
 [![Static Badge](https://img.shields.io/badge/GitHub-Release-green?logo=Github)](https://github.com/VLTNOgithub/Time-Loop/releases/latest)
-[![Static Badge](https://img.shields.io/badge/Modrinth-Release-green?logo=Modrinth)](https://modrinth.com/mod/timeloop/version/latest)
+[![Static Badge](https://img.shields.io/badge/Modrinth-Release-green?logo=Modrinth)](https://modrinth.com/mod/timeloop/versions)
 [![Static Badge](https://img.shields.io/badge/Curseforge-Release-green?logo=Curseforge)](https://www.curseforge.com/minecraft/mc-mods/time-loop/files/all)
 
 A mod that 'loops' time by using the Motion Capture Mod.
