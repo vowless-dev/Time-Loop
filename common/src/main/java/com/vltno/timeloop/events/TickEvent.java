@@ -40,7 +40,6 @@ public class TickEvent {
 
                 TimeLoop.updateInfoBar((int) TimeLoop.timeSetting, (int) timeLeft);
                 if (Math.abs(TimeLoop.timeSetting - timeLeft) >= TimeLoop.timeSetting) {
-                    TimeLoop.tickCounter = 0;
                     TimeLoop.runLoopIteration();
                 }
             }
@@ -49,8 +48,6 @@ public class TickEvent {
 
                 TimeLoop.updateInfoBar(TimeLoop.loopLengthTicks, TimeLoop.ticksLeft);
                 if (TimeLoop.tickCounter >= TimeLoop.loopLengthTicks) {
-                    TimeLoop.tickCounter = 0;
-                    TimeLoop.ticksLeft = TimeLoop.loopLengthTicks;
                     TimeLoop.runLoopIteration();
                 }
             }
