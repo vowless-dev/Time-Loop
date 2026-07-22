@@ -174,6 +174,9 @@ public class TimeLoop {
 		startRecordings();
 		if (trackTimeOfDay) { serverLevel.setDayTime(startTimeOfDay); }
 
+		tickCounter = 0;
+		ticksLeft = loopLengthTicks;
+
         loopIteration++;
 
 		// Rewind active players (inventory, position) before starting playback
