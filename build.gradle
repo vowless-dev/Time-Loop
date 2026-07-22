@@ -1,7 +1,3 @@
-plugins {
-    id "me.modmuss50.mod-publish-plugin" version "2.1.1"
-}
-
 task openBuildDirFabric {
     doLast {
         if (System.properties['os.name'].toString().toLowerCase().contains('windows')) {
@@ -100,73 +96,4 @@ subprojects {
     tasks.withType(JavaCompile).configureEach {
         it.options.release = 21
     }
-}
-
-publishMods {
-    changelog = file("CHANGELOG.md").exists() ? file("CHANGELOG.md").text : "Release ${mod_version} for Minecraft ${minecraft_version}"
-    type = STABLE
-    version = "${mod_version}-${minecraft_version}"
-    displayName = "${mod_version} - ${minecraft_version}"
-
-    def curseforgeOptionsBlock = curseforgeOptions {
-        accessToken = providers.environmentVariable("CURSEFORGE_TOKEN")
-        projectId = curseforge_id
-        minecraftVersions.add(minecraft_version)
-        client = true
-        server = true
-    }
-
-    def modrinthOptionsBlock = modrinthOptions {
-        accessToken = providers.environmentVariable("MODRINTH_TOKEN")
-        projectId = modrinth_id
-        minecraftVersions.add(minecraft_version)
-    }
-
-        curseforge("curseforgeFabric") {
-        from curseforgeOptionsBlock
-        file project(":fabric")
-        displayName = "${mod_version} - Fabric - ${minecraft_version}"
-        version = "${mod_version}-fabric-${minecraft_version}"
-        modLoaders.add("fabric")
-        requires("fabric-api")
-    }
-
-    curseforge("curseforgeNeoForge") {
-        from curseforgeOptionsBlock
-        file project(":neoforge")
-        displayName = "${mod_version} - NeoForge - ${minecraft_version}"
-        version = "${mod_version}-neoforge-${minecraft_version}"
-        modLoaders.add("neoforge")
-    }
-
-    modrinth("modrinthFabric") {
-        from modrinthOptionsBlock
-        file project(":fabric")
-        displayName = "${mod_version} - Fabric - ${minecraft_version}"
-        version = "${mod_version}-fabric-${minecraft_version}"
-        modLoaders.add("fabric")
-        requires("fabric-api")
-    }
-
-    modrinth("modrinthNeoForge") {
-        from modrinthOptionsBlock
-        file project(":neoforge")
-        displayName = "${mod_version} - NeoForge - ${minecraft_version}"
-        version = "${mod_version}-neoforge-${minecraft_version}"
-        modLoaders.add("neoforge")
-    }
-
-        github {
-        accessToken = providers.environmentVariable("GITHUB_TOKEN")
-        repository = github_repo
-        commitish = "main"
-        tagName = mod_version
-        displayName = mod_version
-        file project(":fabric")
-        additionalFile(project(":neoforge"))
-    }
-    
-    dryRun = providers.environmentVariable("CURSEFORGE_TOKEN").getOrNull() == null && 
-             providers.environmentVariable("MODRINTH_TOKEN").getOrNull() == null &&
-             providers.environmentVariable("GITHUB_TOKEN").getOrNull() == null
 }
